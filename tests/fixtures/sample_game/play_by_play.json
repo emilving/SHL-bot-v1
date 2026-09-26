@@ -1,0 +1,422 @@
+[
+ {
+  "type": "period",
+  "period": 1,
+  "time": "00:00",
+  "started": true,
+  "finished": false,
+  "id": 1
+ },
+ {
+  "type": "goalkeeper",
+  "period": 1,
+  "time": "00:00",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Emil",
+   "familyName": "Larsson",
+   "jerseyToday": "30"
+  },
+  "isEntering": true,
+  "id": 2
+ },
+ {
+  "type": "goalkeeper",
+  "period": 1,
+  "time": "00:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Joel",
+   "familyName": "Lassinantti",
+   "jerseyToday": "35"
+  },
+  "isEntering": true,
+  "id": 3
+ },
+ {
+  "type": "shot",
+  "period": 1,
+  "time": "02:10",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Linus",
+   "familyName": "Johansson",
+   "jerseyToday": "21"
+  },
+  "id": 4
+ },
+ {
+  "type": "shot",
+  "period": 1,
+  "time": "03:15",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Linus",
+   "familyName": "Johansson",
+   "jerseyToday": "21"
+  },
+  "id": 5
+ },
+ {
+  "type": "shot",
+  "period": 1,
+  "time": "06:40",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Linus",
+   "familyName": "Johansson",
+   "jerseyToday": "21"
+  },
+  "id": 6
+ },
+ {
+  "type": "shot",
+  "period": 1,
+  "time": "04:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Brandon",
+   "familyName": "Gignac",
+   "jerseyToday": "12"
+  },
+  "id": 7
+ },
+ {
+  "type": "penalty",
+  "period": 1,
+  "time": "07:12",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Anton",
+   "familyName": "Lindholm",
+   "jerseyToday": "4"
+  },
+  "offence": "Hakning",
+  "variant": {
+   "description": "2 min",
+   "minorTime": "2"
+  },
+  "id": 8
+ },
+ {
+  "type": "goal",
+  "period": 1,
+  "time": "08:05",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Marcus",
+   "familyName": "Sörensen",
+   "jerseyToday": "91"
+  },
+  "assists": {
+   "first": {
+    "firstName": "Linus",
+    "familyName": "Johansson",
+    "jerseyToday": "21"
+   },
+   "second": {
+    "firstName": "Erik",
+    "familyName": "Brännström",
+    "jerseyToday": "5"
+   }
+  },
+  "homeGoals": 1,
+  "awayGoals": 0,
+  "goalStatus": "PP1",
+  "id": 9
+ },
+ {
+  "type": "period",
+  "period": 1,
+  "time": "20:00",
+  "started": true,
+  "finished": true,
+  "id": 10
+ },
+ {
+  "type": "period",
+  "period": 2,
+  "time": "00:00",
+  "started": true,
+  "finished": false,
+  "id": 11
+ },
+ {
+  "type": "shot",
+  "period": 2,
+  "time": "01:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Brandon",
+   "familyName": "Gignac",
+   "jerseyToday": "12"
+  },
+  "id": 12
+ },
+ {
+  "type": "goal",
+  "period": 2,
+  "time": "05:30",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Brandon",
+   "familyName": "Gignac",
+   "jerseyToday": "12"
+  },
+  "assists": {
+   "first": {
+    "firstName": "Anton",
+    "familyName": "Lindholm",
+    "jerseyToday": "4"
+   }
+  },
+  "homeGoals": 1,
+  "awayGoals": 1,
+  "goalStatus": "EQ",
+  "id": 13
+ },
+ {
+  "type": "penalty",
+  "period": 2,
+  "time": "09:00",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Erik",
+   "familyName": "Brännström",
+   "jerseyToday": "5"
+  },
+  "offence": "Slashing",
+  "variant": {
+   "description": "2 min",
+   "minorTime": "2"
+  },
+  "id": 14
+ },
+ {
+  "type": "penalty",
+  "period": 2,
+  "time": "09:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Anton",
+   "familyName": "Lindholm",
+   "jerseyToday": "4"
+  },
+  "offence": "Roughing",
+  "variant": {
+   "description": "2 min",
+   "minorTime": "2"
+  },
+  "id": 15
+ },
+ {
+  "type": "injury",
+  "period": 2,
+  "time": "11:11",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Brandon",
+   "familyName": "Gignac",
+   "jerseyToday": "12"
+  },
+  "description": "Lämnade isen",
+  "id": 16
+ },
+ {
+  "type": "goal",
+  "period": 2,
+  "time": "14:00",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Linus",
+   "familyName": "Johansson",
+   "jerseyToday": "21"
+  },
+  "homeGoals": 2,
+  "awayGoals": 1,
+  "goalStatus": "EQ",
+  "id": 17
+ },
+ {
+  "type": "goalkeeper",
+  "period": 2,
+  "time": "14:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Joel",
+   "familyName": "Lassinantti",
+   "jerseyToday": "35"
+  },
+  "isEntering": false,
+  "id": 18
+ },
+ {
+  "type": "goalkeeper",
+  "period": 2,
+  "time": "14:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Filip",
+   "familyName": "Gunnarsson",
+   "jerseyToday": "1"
+  },
+  "isEntering": true,
+  "id": 19
+ },
+ {
+  "type": "shot",
+  "period": 2,
+  "time": "16:00",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Linus",
+   "familyName": "Johansson",
+   "jerseyToday": "21"
+  },
+  "id": 20
+ },
+ {
+  "type": "period",
+  "period": 2,
+  "time": "20:00",
+  "started": true,
+  "finished": true,
+  "id": 21
+ },
+ {
+  "type": "period",
+  "period": 3,
+  "time": "00:00",
+  "started": true,
+  "finished": false,
+  "id": 22
+ },
+ {
+  "type": "shot",
+  "period": 3,
+  "time": "03:00",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Brandon",
+   "familyName": "Gignac",
+   "jerseyToday": "12"
+  },
+  "id": 23
+ },
+ {
+  "type": "goalkeeper",
+  "period": 3,
+  "time": "18:30",
+  "eventTeam": {
+   "place": "away",
+   "teamCode": "LHF",
+   "teamName": "Luleå Hockey"
+  },
+  "player": {
+   "firstName": "Filip",
+   "familyName": "Gunnarsson",
+   "jerseyToday": "1"
+  },
+  "isEntering": false,
+  "id": 24
+ },
+ {
+  "type": "goal",
+  "period": 3,
+  "time": "19:10",
+  "eventTeam": {
+   "place": "home",
+   "teamCode": "FBK",
+   "teamName": "Färjestad BK"
+  },
+  "player": {
+   "firstName": "Marcus",
+   "familyName": "Sörensen",
+   "jerseyToday": "91"
+  },
+  "homeGoals": 3,
+  "awayGoals": 1,
+  "goalStatus": "EN",
+  "id": 25
+ },
+ {
+  "type": "period",
+  "period": 3,
+  "time": "20:00",
+  "started": true,
+  "finished": true,
+  "id": 26
+ }
+]

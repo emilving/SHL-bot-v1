@@ -1,0 +1,24 @@
+{
+ "uuid": "sample-uuid",
+ "startDateTime": "2026-09-26 19:00:00",
+ "state": "post-game",
+ "homeTeamInfo": {
+  "code": "FBK",
+  "names": {
+   "long": "Färjestad BK",
+   "short": "Färjestad"
+  },
+  "score": 3
+ },
+ "awayTeamInfo": {
+  "code": "LHF",
+  "names": {
+   "long": "Luleå Hockey",
+   "short": "Luleå"
+  },
+  "score": 1
+ },
+ "venueInfo": {
+  "name": "Löfbergs Arena"
+ }
+}
