@@ -37,6 +37,9 @@ COLORS = {
 
 FIELD_LIMIT = 1024
 
+# Spelsituation i swehockeys målrader, t.ex. "2-1 (PP1)"
+SWE_STRENGTH = {"PP": "Powerplay", "SH": "Boxplay", "EN": "Tom kasse", "PS": "Straffslag"}
+
 
 @dataclass
 class EmbedSpec:
@@ -292,10 +295,24 @@ def render(n: Notification, shootout_period: int = 5) -> EmbedSpec:
     if n.kind == "score_goal":
         side = n.extra.get("side")
         spec = EmbedSpec(f"🚨 MÅL! {scoreline(g, n.score)}", color=COLORS["goal"])
-        spec.description = f"**{team_name(g, side)}** gör mål\n*Målskytt och assist fylls i när SHL har registrerat målet.*"
         st = n.status
-        if st and st.period:
-            spec.footer = f"{period_name(st.period, shootout_period)} {st.clock or ''}".strip()
+        swe_goal = n.extra.get("swe_goal")
+        if swe_goal and swe_goal.scorer:
+            lines = [f"**{swe_goal.scorer}** ({team_name(g, side)})"]
+            if swe_goal.assists:
+                lines.append(f"Assist: {', '.join(swe_goal.assists)}")
+            spec.description = "\n".join(lines)
+            secs = int(swe_goal.time.split(":")[0]) * 60 + int(swe_goal.time.split(":")[1])
+            period = secs // 1200 + 1
+            footer = f"{period_name(period, shootout_period)} {(secs % 1200) // 60:02d}:{secs % 60:02d}"
+            lbl = SWE_STRENGTH.get(swe_goal.strength.upper().rstrip("0123456789"), None)
+            spec.footer = f"{footer} · {lbl}" if lbl else footer
+        else:
+            spec.description = (
+                f"**{team_name(g, side)}** gör mål\n*Målskytt och assist fylls i när SHL har registrerat målet.*"
+            )
+            if st and st.period:
+                spec.footer = f"{period_name(st.period, shootout_period)} {st.clock or ''}".strip()
         return spec
     if n.kind == "starters":
         spec = EmbedSpec("🥅 Startande målvakter", color=COLORS["goalie"])

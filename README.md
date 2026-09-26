@@ -34,10 +34,25 @@ Slash-kommandon: `/matcher` (dagens matcher och ställning) och `/stats lag:FBK`
 
 Sätt `SHL_TEAMS=FBK,LHF` om du bara vill följa vissa lag.
 
+## stats.swehockey.se
+
+SHL:s egen händelselista kan ligga flera minuter efter. Boten läser därför även matchsidan på
+[stats.swehockey.se](https://stats.swehockey.se) (Svenska Ishockeyförbundet), som brukar visa
+ställning, period och paus snabbare. Därifrån tas:
+
+- **ställningen**, så att "🚨 MÅL!" postas direkt, med målskytt och assist om swehockey har dem,
+- **period, klocka, paus och slut**. Periodsammanfattningen väntar ändå ett par minuter efter
+  pausen, så att SHL:s händelser (som statistiken bygger på) hinner ikapp.
+
+Målmeddelandet uppdateras sedan med SHL:s uppgifter. Stäng av med `SWEHOCKEY=0` i `.env`.
+Tolkningen av swehockeys sidor bygger på [ha-swehockey-api](https://github.com/Tiimber/ha-swehockey-api)
+av Tiimber (MIT-licens).
+
 ## Verktyg för felsökning
 
 ```bash
 python -m shlbot games              # dagens matcher med uuid
+python -m shlbot compare            # jämför SHL och stats.swehockey.se live (Windows: jamfor-kallor.bat)
 python -m shlbot run --dry-run      # bevaka live men skriv i terminalen i stället för Discord
 python -m shlbot probe <uuid>       # spara SHL:s rådata för en match i probe/<uuid>/
 python -m shlbot replay probe/<uuid> # spela upp sparad match och visa alla notiser

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -12,14 +13,19 @@ from typing import Any, Protocol
 from .api import NotAvailable, SHLClient, is_playoff
 from .config import Config
 from .formatting import EmbedSpec, render
-from .models import GOAL, STOCKHOLM, GameInfo, parse_events, parse_status
+from .models import GOAL, STOCKHOLM, GameInfo, GameStatus, parse_events, parse_status
 from .stats import parse_team_stats
+from .swehockey import SweGame, SweHockeyClient
 from .tracker import GameTracker, Notification
 
 log = logging.getLogger(__name__)
 
 # Hur länge före nedsläpp matchen börjar pollas
 PRE_GAME_WINDOW = timedelta(minutes=10)
+# Hur länge swehockey ska ha visat paus/slut innan sammanfattningen postas (sekunder),
+# så att SHL:s händelser hinner ikapp
+SWE_PAUSE_DELAY = 180
+SWE_FINAL_DELAY = 300
 # Längsta tid en match kan pågå innan vi slutar polla den
 MAX_GAME_LENGTH = timedelta(hours=6)
 
@@ -52,10 +58,16 @@ class ConsoleSink:
 
 
 class Monitor:
-    def __init__(self, config: Config, client: SHLClient, sink: Sink):
+    def __init__(self, config: Config, client: SHLClient, sink: Sink, swe: SweHockeyClient | None = None):
         self.config = config
         self.client = client
         self.sink = sink
+        self.swe = swe
+        # stats.swehockey.se: match-id per SHL-match, senaste data och tidpunkter för paus/slut
+        self.swe_ids: dict[str, int | None] = {}
+        self.swe_lookup_at: dict[str, float] = {}
+        self.swe_last: dict[str, SweGame] = {}
+        self.swe_since: dict[tuple[str, str], float] = {}
         self.games: dict[str, GameInfo] = {}
         self.trackers: dict[str, GameTracker] = {}
         self.no_team_stats: set[str] = set()
@@ -138,9 +150,14 @@ class Monitor:
 
     async def poll_game(self, game: GameInfo) -> None:
         # Händelser och matchstatus hämtas samtidigt för att spara tid
-        pbp_res, ov_res = await asyncio.gather(
-            self.client.play_by_play(game.uuid), self.client.overview(game.uuid), return_exceptions=True
+        pbp_res, ov_res, swe = await asyncio.gather(
+            self.client.play_by_play(game.uuid),
+            self.client.overview(game.uuid),
+            self.swe_game(game),
+            return_exceptions=True,
         )
+        if isinstance(swe, BaseException):
+            swe = None
         if isinstance(pbp_res, NotAvailable):
             if game.uuid not in self.warned:
                 log.warning("%s: händelselistan (play-by-play) finns inte hos SHL (404)", game.title)
@@ -164,20 +181,24 @@ class Monitor:
                 self.no_team_stats.add(game.uuid)
 
         events = parse_events(pbp, game)
-        status = parse_status(overview, game)
-        summary = (len(events), status.home_score, status.away_score, status.period)
+        status = self.merge_status(game, parse_status(overview, game), swe)
+        summary = (len(events), status.home_score, status.away_score, status.period, status.phase)
         if self.last_summary.get(game.uuid) != summary:
             self.last_summary[game.uuid] = summary
             kinds = Counter(e.kind for e in events)
             log.info(
-                "%s %s–%s (period %s %s): %d händelser %s",
+                "%s %s–%s (period %s %s, %s): %d händelser %s%s",
                 game.title,
                 status.home_score,
                 status.away_score,
                 status.period,
                 status.clock or "",
+                status.phase,
                 len(events),
                 dict(kinds),
+                f" [swehockey: {swe.state_text or ''} {swe.clock or ''}]" if swe else " [swehockey: ingen data]"
+                if self.swe
+                else "",
             )
         t = self.tracker(game)
         notes = t.update(events, status, team_stats)
@@ -190,7 +211,79 @@ class Monitor:
         if notes:
             self._save_state()
 
+    # -- stats.swehockey.se ---------------------------------------------------
+
+    async def swe_game(self, game: GameInfo) -> SweGame | None:
+        if self.swe is None or not game.start:
+            return None
+        now = time.monotonic()
+        if self.swe_ids.get(game.uuid) is None:
+            if now - self.swe_lookup_at.get(game.uuid, -1e9) < 120:
+                return None
+            self.swe_lookup_at[game.uuid] = now
+            try:
+                day = game.start.astimezone(STOCKHOLM).date()
+                self.swe_ids[game.uuid] = await self.swe.find_game_id(day, game.home.name, game.away.name)
+            except Exception as e:
+                log.warning("%s: kunde inte nå stats.swehockey.se: %s", game.title, e)
+                return None
+            if self.swe_ids[game.uuid] is None:
+                log.warning("%s: hittar inte matchen på stats.swehockey.se", game.title)
+                return None
+            log.info("%s: följer även stats.swehockey.se (match %s)", game.title, self.swe_ids[game.uuid])
+        try:
+            data = await self.swe.game(self.swe_ids[game.uuid])  # type: ignore[arg-type]
+        except Exception as e:
+            log.debug("%s: swehockey-fel: %s", game.title, e)
+            return None
+        self.swe_last[game.uuid] = data
+        return data
+
+    def merge_status(self, game: GameInfo, shl: GameStatus, swe: SweGame | None) -> GameStatus:
+        """Kombinerar SHL:s status med swehockeys, som oftast ligger före.
+
+        Ställningen tas från den källa som ligger längst fram. Paus och slut från
+        swehockey används först efter en stund, så att SHL:s händelser (som
+        statistiken bygger på) hinner ikapp innan sammanfattningen postas.
+        """
+        if swe is None or swe.home_score is None:
+            return shl
+        now = time.monotonic()
+
+        def since(key: str, active: bool) -> float:
+            k = (game.uuid, key)
+            if not active:
+                self.swe_since.pop(k, None)
+                return 0.0
+            return now - self.swe_since.setdefault(k, now)
+
+        final_for = since("final", swe.final)
+        pause_for = since(f"pause{swe.period}", swe.intermission)
+        phase = shl.phase
+        if shl.phase != "final":
+            if swe.final and final_for >= SWE_FINAL_DELAY:
+                phase = "final"
+            elif swe.intermission and pause_for >= SWE_PAUSE_DELAY:
+                phase = "intermission"
+            elif shl.phase == "pre" and (swe.period or swe.final):
+                phase = "live"
+        hs = max(x for x in (shl.home_score, swe.home_score) if x is not None)
+        as_ = max(x for x in (shl.away_score, swe.away_score) if x is not None)
+        return GameStatus(
+            phase=phase,
+            period=swe.period or shl.period,
+            clock=swe.clock or shl.clock,
+            home_score=hs,
+            away_score=as_,
+        )
+
     async def _deliver(self, t: GameTracker, n: Notification) -> None:
+        # Mål från ställningsändring: lägg till målskytt från swehockey om den finns
+        if n.kind == "score_goal" and n.score:
+            swe = self.swe_last.get(n.game.uuid)
+            goal = swe.goal_with_score(*n.score) if swe else None
+            if goal:
+                n.extra["swe_goal"] = goal
         # Rättelser (t.ex. assist som läggs till i efterhand) redigerar målmeddelandet
         if n.kind == "correction" and n.event and n.event.id in t.messages:
             updated = render(

@@ -13,6 +13,7 @@ from .config import Config
 from .formatting import EmbedSpec, goalie_table, period_name, scoreline, stat_table
 from .models import STOCKHOLM, GameInfo
 from .monitor import Monitor
+from .swehockey import SweHockeyClient
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class SHLBot(discord.Client):
         self.config = config
         self.tree = app_commands.CommandTree(self)
         self.shl: SHLClient | None = None
+        self.swe: SweHockeyClient | None = None
         self.monitor: Monitor | None = None
         self._task: asyncio.Task | None = None
         self._register_commands()
@@ -85,7 +87,8 @@ class SHLBot(discord.Client):
     async def setup_hook(self) -> None:
         assert self.config.channel_id, "DISCORD_CHANNEL_ID saknas"
         self.shl = await SHLClient(self.config).__aenter__()
-        self.monitor = Monitor(self.config, self.shl, DiscordSink(self, self.config.channel_id))
+        self.swe = await SweHockeyClient().__aenter__() if self.config.swehockey else None
+        self.monitor = Monitor(self.config, self.shl, DiscordSink(self, self.config.channel_id), self.swe)
         if self.config.guild_id:
             guild = discord.Object(id=self.config.guild_id)
             self.tree.copy_global_to(guild=guild)
@@ -104,6 +107,8 @@ class SHLBot(discord.Client):
             self._task.cancel()
         if self.shl:
             await self.shl.close()
+        if self.swe:
+            await self.swe.close()
         await super().close()
 
     # -- slash-kommandon ----------------------------------------------------

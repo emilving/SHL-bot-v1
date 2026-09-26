@@ -53,6 +53,11 @@ class Config:
         default_factory=lambda: os.getenv("SHL_TEAM_STATS_PATH", "/api/gameday/team-stats/{uuid}")
     )
 
+    # Använd stats.swehockey.se för snabbare ställning, period och paus
+    swehockey: bool = field(
+        default_factory=lambda: os.getenv("SWEHOCKEY", "1").strip() not in ("0", "false", "no")
+    )
+
     state_file: Path = field(default_factory=lambda: Path(os.getenv("STATE_FILE", "state.json")))
     # Posta startande målvakter när matchen börjar
     post_starting_goalies: bool = field(
