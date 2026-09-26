@@ -27,6 +27,9 @@ Slash-kommandon: `/matcher` (dagens matcher och ställning) och `/stats lag:FBK`
    python -m shlbot run
    ```
 
+   På Windows kan du i stället dubbelklicka på **`starta-boten.bat`** (installerar och startar),
+   och **`testa-matcher.bat`** för att testa mot en pågående match.
+
    Med Docker: `docker build -t shl-bot . && docker run --env-file .env -v shl-data:/data shl-bot`
 
 Sätt `SHL_TEAMS=FBK,LHF` om du bara vill följa vissa lag.
