@@ -34,6 +34,7 @@ _SCORE_RE = re.compile(r"^(\d+)\s*[-–]\s*(\d+)$")
 _CLOCK_RE = re.compile(r"^\d{1,2}:\d{2}$")
 _TRAILING_CLOCK_RE = re.compile(r"\((\d{1,2}:\d{2})\)\s*$")
 _GOAL_ROW_RE = re.compile(r"^(\d+)-(\d+)\s*\(([^)]+)\)\s*$")
+_GOALIE_RE = re.compile(r"\d+[,.]\d+\s*%\s*\((\d+)\s*/\s*(\d+)\)")
 _PENALTY_ROW_RE = re.compile(r"^(\d+)\s*min\b", re.I)
 
 
@@ -88,6 +89,14 @@ class SweGoal:
 
 
 @dataclass
+class SweGoalie:
+    team: str
+    name: str
+    saves: int
+    shots: int
+
+
+@dataclass
 class SweGame:
     home_score: int | None = None
     away_score: int | None = None
@@ -98,6 +107,7 @@ class SweGame:
     state_text: str | None = None
     goals: list[SweGoal] = field(default_factory=list)
     penalties: int = 0
+    goalies: list[SweGoalie] = field(default_factory=list)
 
     def goal_with_score(self, home: int, away: int) -> SweGoal | None:
         return next((g for g in self.goals if (g.home, g.away) == (home, away)), None)
@@ -180,6 +190,20 @@ def parse_game_page(html: str) -> SweGame:
                 m = _TRAILING_CLOCK_RE.search(t)
                 if m:
                     game.clock = f"{int(m.group(1).split(':')[0]):02d}:{m.group(1).split(':')[1]}"
+
+    # "Goalkeeper Summary": t.ex. "VÄX | 70. Åhman, Adam | 80,00% (20/25)"
+    for row in soup.find_all("tr"):
+        cells = [_text(c) for c in row.find_all("td")]
+        joined = " ".join(cells)
+        m = _GOALIE_RE.search(joined)
+        if not m or re.fullmatch(r"\d{1,3}:\d{2}", cells[0] if cells else ""):
+            continue
+        player = next((c for c in cells if re.match(r"^\d+\.\s*\S", c) and "%" not in c), None)
+        team = next((c for c in cells if c and c != player and "%" not in c), "")
+        if player:
+            game.goalies.append(
+                SweGoalie(team=team, name=_player_name(player), saves=int(m.group(1)), shots=int(m.group(2)))
+            )
 
     # Händelsetabellen: första cellen är speltid "mm:ss" från matchstart, nyast först
     for table in soup.find_all("table"):

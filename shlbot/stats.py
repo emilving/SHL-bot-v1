@@ -48,8 +48,8 @@ STAT_ALIASES: dict[str, tuple[str, ...]] = {
 @dataclass
 class TeamLine:
     goals: int = 0
-    shots: int = 0
-    saves: int = 0
+    shots: int | None = 0
+    saves: int | None = 0
     pim: int = 0
     pp_goals: int = 0
     pp_opps: int = 0
@@ -103,6 +103,9 @@ class GameStats:
     periods: dict[int, PeriodStats]
     goalies: list[GoalieLine]
     has_faceoffs: bool = False
+    # Officiella skott/räddningar för matchen hittills (från målvaktsstatistiken), per lag
+    official_shots: dict[str, int] | None = None
+    official_saves: dict[str, int] | None = None
 
     def total(self, upto: int | None = None) -> PeriodStats:
         tot = PeriodStats()
@@ -111,6 +114,11 @@ class GameStats:
                 continue
             tot.home.add(st.home)
             tot.away.add(st.away)
+        last = max(self.periods, default=0)
+        if self.official_shots and (upto is None or upto >= last):
+            for side in SIDES:
+                tot.side(side).shots = self.official_shots[side]
+                tot.side(side).saves = (self.official_saves or {}).get(side, tot.side(side).saves)
         return tot
 
 
@@ -127,6 +135,7 @@ def compute(
     team_stats: dict[int, PeriodStats] | None = None,
     shootout_period: int = 5,
     game_over: bool = False,
+    official_goalies: list[GoalieLine] | None = None,
 ) -> GameStats:
     """Räknar fram statistik ur händelserna.
 
@@ -163,7 +172,7 @@ def compute(
             if e.is_empty_net:
                 line.en_goals += 1
         elif e.kind == SHOT:
-            if not (shot_events_include_goals and e.shot_is_goal):
+            if e.on_goal and not (shot_events_include_goals and e.shot_is_goal):
                 line.shots += 1
         elif e.kind == PENALTY:
             mins = e.penalty_minutes or 0
@@ -204,11 +213,29 @@ def compute(
             if any(override.side(s).faceoffs_won is not None for s in SIDES):
                 has_faceoffs = True
 
-    return GameStats(
+    result = GameStats(
         periods=periods,
         goalies=compute_goalies(events, shootout_period, game_over),
         has_faceoffs=has_faceoffs,
     )
+    if official_goalies:
+        # Officiell målvaktsstatistik: lagets skott på mål = motståndarmålvakternas
+        # skott mot + mål i tom kasse
+        result.goalies = official_goalies
+        en = {side: sum(st.side(side).en_goals for st in periods.values()) for side in SIDES}
+        result.official_shots = {
+            side: sum(g.shots_against for g in official_goalies if g.side == other(side)) + en[side]
+            for side in SIDES
+        }
+        result.official_saves = {side: sum(g.saves for g in official_goalies if g.side == side) for side in SIDES}
+        # Skott per period från SHL:s lista visas bara om de stämmer med de officiella siffrorna
+        derived = {side: sum(st.side(side).shots or 0 for st in periods.values()) for side in SIDES}
+        if derived != result.official_shots:
+            for st in periods.values():
+                for side in SIDES:
+                    st.side(side).shots = None
+                    st.side(side).saves = None
+    return result
 
 
 def compute_goalies(events: list[Event], shootout_period: int = 5, game_over: bool = False) -> list[GoalieLine]:
@@ -241,7 +268,7 @@ def compute_goalies(events: list[Event], shootout_period: int = 5, game_over: bo
             if e.player is None or in_net.get(e.side) == e.player:
                 leave(e.side, e.game_seconds)
         elif e.kind in (GOAL, SHOT) and e.side in SIDES:
-            if e.kind == SHOT and shot_events_include_goals and e.shot_is_goal:
+            if e.kind == SHOT and (not e.on_goal or (shot_events_include_goals and e.shot_is_goal)):
                 continue
             defending = other(e.side)
             name = e.goalie or in_net.get(defending)

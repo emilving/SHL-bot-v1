@@ -66,6 +66,15 @@ async def cmd_probe(cfg: Config, uuid: str) -> None:
                 print(f"  {len(raw)} händelser, typer: {dict(types)}")
                 keys = Counter(k for e in raw for k in e)
                 print(f"  fält: {sorted(keys)}")
+                # Visa vilka värden skotten har, för att skilja skott på mål från missar/blockeringar
+                shots = [e for e in raw if str(e.get("type", "")).lower().startswith("shot")]
+                if shots:
+                    print(f"  skott ({len(shots)} st), fält med få olika värden:")
+                    for k in sorted({k for e in shots for k in e}):
+                        vals = Counter(json.dumps(e.get(k), ensure_ascii=False)[:40] for e in shots)
+                        if 1 < len(vals) <= 8:
+                            print(f"    {k}: {dict(vals)}")
+                    print(f"  exempel på skott: {json.dumps(shots[-1], ensure_ascii=False)[:600]}")
         # Jämför färskhet med och utan cache-parameter
         print("\nJämförelse av hur färsk datan är:")
         for label, bust in (("med tidsstämpel", True), ("utan tidsstämpel", False)):

@@ -66,3 +66,29 @@ def test_merge_status_score_and_delayed_pause():
     mon.swe_since[key] = time.monotonic() - SWE_PAUSE_DELAY - 1
     assert mon.merge_status(game, shl, swe).phase == "intermission"
     assert mon.merge_status(game, shl, None) is shl
+
+
+def test_goalkeeper_summary_and_official_stats(game=None):
+    from shlbot.stats import compute
+    from shlbot.tracker import GameTracker
+
+    g = parse_game_page((FIX / "game_events.html").read_text("utf-8"))
+    assert [(x.team, x.name, x.saves, x.shots) for x in g.goalies] == [
+        ("VÄX", "#70 Adam Åhman", 8, 9),
+        ("HV71", "#80 Herman Liv", 7, 10),
+    ]
+    info = GameInfo.parse(
+        {
+            "uuid": "x",
+            "homeTeamInfo": {"code": "VLH", "names": {"long": "Växjö Lakers"}},
+            "awayTeamInfo": {"code": "HV71", "names": {"long": "HV71"}},
+        }
+    )
+    mon = _monitor()
+    lines = mon.official_goalies(info, GameTracker(game=info), g)
+    assert [(x.side, x.saves, x.save_pct) for x in lines] == [("home", 8, 8 / 9), ("away", 7, 0.7)]
+
+    stats = compute([], official_goalies=lines)
+    tot = stats.total()
+    assert (tot.home.shots, tot.away.shots) == (10, 9)
+    assert (tot.home.saves, tot.away.saves) == (8, 7)

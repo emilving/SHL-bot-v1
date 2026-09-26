@@ -261,6 +261,8 @@ class Event:
     offence: str | None = None
     goalie: str | None = None
     shot_is_goal: bool = False
+    # False för skott som missat eller blockerats (räknas inte som skott på mål)
+    on_goal: bool = True
     description: str | None = None
     raw: dict = field(default_factory=dict, repr=False)
 
@@ -344,6 +346,30 @@ def _event_kind(raw_type: str, e: dict) -> str:
     return OTHER
 
 
+_OFF_TARGET_WORDS = ("miss", "wide", "block", "post", "bar", "stolp", "ribb", "utanför", "bredvid", "täck")
+
+
+def shot_on_goal(e: dict) -> bool:
+    """Om ett skott i SHL:s händelselista gick på mål.
+
+    Listan innehåller även missade och blockerade skott. Fälten är inte
+    dokumenterade, så flera tänkbara namn prövas.
+    """
+    for key in ("isOnGoal", "onGoal", "shotOnGoal", "isShotOnGoal", "onTarget", "sog", "isSaved", "saved"):
+        if key in e and e[key] is not None:
+            return truthy(e[key])
+    for key in ("isBlocked", "blocked", "isMissed", "missed", "wide", "isWide", "hitPost"):
+        if truthy(e.get(key)):
+            return False
+    for key in ("result", "outcome", "shotResult", "shotType", "subType", "shotOutcome", "section", "status"):
+        v = e.get(key)
+        if isinstance(v, dict):
+            v = first(v, "code", "name", "description", "type")
+        if isinstance(v, str) and any(w in v.lower() for w in _OFF_TARGET_WORDS):
+            return False
+    return True
+
+
 def _stable_id(raw_type: str, period: int, time: str, e: dict) -> str:
     explicit = first(e, "id", "eventId", "uuid", "eventUuid", "gameSourceId")
     if explicit is not None:
@@ -408,6 +434,7 @@ def parse_event(e: dict, game: GameInfo | None = None) -> Event:
 
     goalie_raw = first(e, "goalieInNet", "goalkeeperInNet", "goalie", "goalkeeper") if kind in (GOAL, SHOT) else None
 
+    on_goal = kind != SHOT or shot_on_goal(e)
     shot_goal = kind == SHOT and (
         truthy(first(e, "isGoal", "goal", "resultedInGoal", default=False))
         or str(first(e, "result", "outcome", default="")).lower() == "goal"
@@ -430,6 +457,7 @@ def parse_event(e: dict, game: GameInfo | None = None) -> Event:
         offence=_offence(e) if kind == PENALTY else None,
         goalie=player_label(goalie_raw) if goalie_raw else None,
         shot_is_goal=shot_goal,
+        on_goal=on_goal,
         description=first(e, "description", "text", "comment"),
         raw=e,
     )

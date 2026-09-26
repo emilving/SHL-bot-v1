@@ -138,13 +138,17 @@ def _v(v: int | None) -> str:
     return "–" if v is None else str(v)
 
 
+def _on_goalie(line: TeamLine) -> int | None:
+    """Skott som målvakten mötte (utan mål i tom kasse)."""
+    return None if line.shots is None else line.shots - (line.en_goals or 0)
+
+
 def stat_rows(home: TeamLine, away: TeamLine, has_faceoffs: bool) -> list[tuple[str, str, str]]:
     rows = [
         ("Mål", _v(home.goals), _v(away.goals)),
         ("Skott på mål", _v(home.shots), _v(away.shots)),
         ("Räddningar", _v(home.saves), _v(away.saves)),
-        ("Räddning%", _pct(home.saves, away.shots - (away.en_goals or 0)),
-         _pct(away.saves, home.shots - (home.en_goals or 0))),
+        ("Räddning%", _pct(home.saves, _on_goalie(away)), _pct(away.saves, _on_goalie(home))),
         ("Utv.minuter", _v(home.pim), _v(away.pim)),
         ("PP", f"{home.pp_goals}/{home.pp_opps}", f"{away.pp_goals}/{away.pp_opps}"),
         ("PP%", _pct(home.pp_goals, home.pp_opps), _pct(away.pp_goals, away.pp_opps)),
@@ -186,13 +190,18 @@ def per_period_table(game: GameInfo, stats: GameStats, shootout_period: int) -> 
     periods = sorted(p for p in stats.periods if p < shootout_period)
     if not periods:
         return ""
-    head = f"{'':<10}" + "".join(f"{period_short(p):>5}" for p in periods) + f"{'Tot':>5}"
+    # Smal tabell så att den inte radbryts i mobilen
+    head = f"{'':<10}" + "".join(f"{period_short(p):>4}" for p in periods) + f"{'Tot':>4}"
     lines = [head]
     total = stats.total()
-    for label, attr in (("Mål", "goals"), ("Skott", "shots"), ("Utv", "pim")):
+    shots_known = all(stats.periods[p].side(s).shots is not None for p in periods for s in (HOME, AWAY))
+    rows = [("Mål", "goals"), ("Skott", "shots"), ("Utv", "pim")] if shots_known else [
+        ("Mål", "goals"), ("Utv", "pim")
+    ]
+    for label, attr in rows:
         for side, tcode, tot in ((HOME, game.home.code, total.home), (AWAY, game.away.code, total.away)):
-            vals = "".join(f"{_v(getattr(stats.periods[p].side(side), attr)):>5}" for p in periods)
-            lines.append(f"{(label + ' ' + tcode)[:10]:<10}{vals}{_v(getattr(tot, attr)):>5}")
+            vals = "".join(f"{_v(getattr(stats.periods[p].side(side), attr)):>4}" for p in periods)
+            lines.append(f"{(label + ' ' + tcode)[:10]:<10}{vals}{_v(getattr(tot, attr)):>4}")
     lines.append("Utv = utvisningsminuter")
     return "```\n" + "\n".join(lines) + "\n```"
 

@@ -24,7 +24,7 @@ from .models import (
     GameStatus,
     clock_seconds,
 )
-from .stats import GameStats, PeriodStats, compute
+from .stats import GameStats, GoalieLine, PeriodStats, compute
 
 # Händelser som postas direkt när de dyker upp
 INSTANT_KINDS = {GOAL, PENALTY, INJURY, PENALTY_SHOT, SHOOTOUT}
@@ -189,10 +189,11 @@ class GameTracker:
         events: list[Event],
         status: GameStatus,
         team_stats: dict[int, PeriodStats] | None = None,
+        official_goalies: list[GoalieLine] | None = None,
     ) -> list[Notification]:
         out: list[Notification] = []
         game_over = status.phase == "final"
-        stats = compute(events, team_stats, self.shootout_period, game_over=game_over)
+        stats = compute(events, team_stats, self.shootout_period, game_over=game_over, official_goalies=official_goalies)
         self.last_events, self.last_stats, self.last_status = events, stats, status
         ids = {e.id for e in events}
 

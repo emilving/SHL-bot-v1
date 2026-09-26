@@ -14,8 +14,8 @@ from .api import NotAvailable, SHLClient, is_playoff
 from .config import Config
 from .formatting import EmbedSpec, render
 from .models import GOAL, STOCKHOLM, GameInfo, GameStatus, parse_events, parse_status
-from .stats import parse_team_stats
-from .swehockey import SweGame, SweHockeyClient
+from .stats import GoalieLine, parse_team_stats
+from .swehockey import SweGame, SweHockeyClient, _compact
 from .tracker import GameTracker, Notification
 
 log = logging.getLogger(__name__)
@@ -201,7 +201,7 @@ class Monitor:
                 else "",
             )
         t = self.tracker(game)
-        notes = t.update(events, status, team_stats)
+        notes = t.update(events, status, team_stats, official_goalies=self.official_goalies(game, t, swe))
         for n in notes:
             # Ett misslyckat meddelande får inte stoppa resten
             try:
@@ -238,6 +238,27 @@ class Monitor:
             return None
         self.swe_last[game.uuid] = data
         return data
+
+    def official_goalies(self, game: GameInfo, t: GameTracker, swe: SweGame | None) -> list[GoalieLine] | None:
+        """Målvaktsstatistik från swehockey (officiell), med rätt lag kopplat till varje målvakt."""
+        if swe is None or not swe.goalies:
+            return None
+        shl_goalies = t.last_stats.goalies if t.last_stats else []
+        order = list(dict.fromkeys(g.team for g in swe.goalies))
+        lines = []
+        for g in swe.goalies:
+            last = g.name.split()[-1].lower()
+            side = next((x.side for x in shl_goalies if last in x.name.lower()), None)
+            if side is None:
+                code = _compact(g.team)[:3]
+                if code and code in (game.home.code.lower()[:3], _compact(game.home.name)[:3]):
+                    side = "home"
+                elif code and code in (game.away.code.lower()[:3], _compact(game.away.name)[:3]):
+                    side = "away"
+                else:
+                    side = "home" if order.index(g.team) == 0 else "away"
+            lines.append(GoalieLine(name=g.name, side=side, shots_against=g.shots, goals_against=g.shots - g.saves))
+        return lines
 
     def merge_status(self, game: GameInfo, shl: GameStatus, swe: SweGame | None) -> GameStatus:
         """Kombinerar SHL:s status med swehockeys, som oftast ligger före.

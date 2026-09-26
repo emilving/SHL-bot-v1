@@ -246,3 +246,27 @@ def test_no_score_fallback_when_events_have_goals(game, events):
 def test_intermission_from_clock(game):
     ov = {"state": "ongoing", "gameTime": {"period": 1, "periodTime": "20:00"}}
     assert parse_status(ov, game).phase == "intermission"
+
+
+@pytest.mark.parametrize(
+    "extra,on_goal",
+    [
+        ({}, True),
+        ({"isOnGoal": False}, False),
+        ({"blocked": True}, False),
+        ({"result": "Missed"}, False),
+        ({"shotResult": {"code": "BLOCKED"}}, False),
+        ({"result": "Saved"}, True),
+    ],
+)
+def test_shot_on_goal(extra, on_goal):
+    assert parse_event({"type": "shot", **extra}).on_goal is on_goal
+
+
+def test_missed_shots_not_counted(game, events):
+    missed = parse_events(
+        [{"type": "shot", "id": "m1", "period": 1, "time": "10:00", "eventTeam": {"place": "home"}, "result": "miss"}],
+        game,
+    )
+    s = compute(events + missed, game_over=True)
+    assert s.total().home.shots == 7
