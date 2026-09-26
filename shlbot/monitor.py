@@ -200,11 +200,20 @@ class Monitor:
             if edited and not n.extra.get("scorer_changed"):
                 return
         spec = render(n, t.shootout_period)
+        # Mål som redan postats utifrån ställningen: redigera det meddelandet med detaljerna
+        replace = n.extra.get("replace")
+        if replace and replace in t.messages and n.event:
+            if await self.sink.edit(t.messages[replace], spec):
+                log.info("Uppdaterar mål med målskytt: %s", spec.title)
+                t.messages[n.event.id] = t.messages.pop(replace)
+                return
         where = f" (händelse {n.event.period}:{n.event.time})" if n.event else ""
         log.info("Postar i Discord: %s%s", spec.title, where)
         ids = await self.sink.send(n.game, [spec])
         if n.kind == "event" and n.event and n.event.kind == GOAL and ids and ids[0]:
             t.messages[n.event.id] = ids[0]
+        if n.kind == "score_goal" and ids and ids[0]:
+            t.messages[n.extra["key"]] = ids[0]
 
     async def _refresh_schedule_safe(self) -> None:
         try:

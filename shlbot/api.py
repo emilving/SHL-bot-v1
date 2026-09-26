@@ -34,6 +34,7 @@ class SHLClient:
         self._own_session = session is None
         self._filters: dict | None = None
         self._filters_at = 0.0
+        self.cache_bust = True
 
     async def __aenter__(self) -> "SHLClient":
         if self._session is None:
@@ -111,11 +112,24 @@ class SHLClient:
 
     # -- live-data ----------------------------------------------------------
 
+    async def live_json(self, path: str, uuid: str) -> Any:
+        """Hämtar live-data med en unik parameter så att inga gamla, cachade svar returneras."""
+        url = self.url(path, uuid)
+        if self.cache_bust:
+            try:
+                return await self.get_json(url, params={"_": int(time.time() * 1000)}, retries=1)
+            except RuntimeError as e:
+                if "400" not in str(e):
+                    raise
+                log.warning("SHL godtar inte cache-parametern, hämtar utan den")
+                self.cache_bust = False
+        return await self.get_json(url, retries=1)
+
     async def overview(self, uuid: str) -> Any:
-        return await self.get_json(self.url(self.config.overview_path, uuid), retries=1)
+        return await self.live_json(self.config.overview_path, uuid)
 
     async def play_by_play(self, uuid: str) -> Any:
-        return await self.get_json(self.url(self.config.pbp_path, uuid), retries=1)
+        return await self.live_json(self.config.pbp_path, uuid)
 
     async def team_stats(self, uuid: str) -> Any:
         if not self.config.team_stats_path:

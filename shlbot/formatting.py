@@ -292,7 +292,7 @@ def render(n: Notification, shootout_period: int = 5) -> EmbedSpec:
     if n.kind == "score_goal":
         side = n.extra.get("side")
         spec = EmbedSpec(f"🚨 MÅL! {scoreline(g, n.score)}", color=COLORS["goal"])
-        spec.description = f"**{team_name(g, side)}** gör mål"
+        spec.description = f"**{team_name(g, side)}** gör mål\n*Målskytt och assist fylls i när SHL har registrerat målet.*"
         st = n.status
         if st and st.period:
             spec.footer = f"{period_name(st.period, shootout_period)} {st.clock or ''}".strip()

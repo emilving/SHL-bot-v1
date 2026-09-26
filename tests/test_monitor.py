@@ -16,6 +16,8 @@ class FakeClient:
         raw = json.loads((FIXTURE / "game.json").read_text("utf-8"))
         raw["startDateTime"] = (datetime.now(STOCKHOLM) - timedelta(minutes=30)).strftime("%Y-%m-%d %H:%M:%S")
         raw["state"] = "ongoing"
+        raw["homeTeamInfo"].pop("score")
+        raw["awayTeamInfo"].pop("score")
         self.game = GameInfo.parse(raw)
         self.events = json.loads((FIXTURE / "play_by_play.json").read_text("utf-8"))
         self.visible = 0
@@ -103,3 +105,34 @@ def test_assist_added_later_edits_goal_message(tmp_path):
     assert not any("korrigerat" in t for t in sink.titles)
     goal_msg = sink.titles.index(next(t for t in sink.titles if t.startswith("🚨 MÅL"))) + 1
     assert "Assist" in sink.edits[goal_msg].description
+
+
+def test_score_goal_posted_first_then_filled_in(tmp_path):
+    cfg = Config()
+    cfg.state_file = tmp_path / "state.json"
+    cfg.teams = set()
+    client, sink = FakeClient(), Collect()
+    goal_idx = next(i for i, e in enumerate(client.events) if e["type"] == "goal")
+    score = {"h": 0}
+
+    async def overview(uuid):
+        return {"state": "ongoing", "homeTeam": {"score": score["h"]}, "awayTeam": {"score": 0}}
+
+    client.overview = overview
+
+    async def scenario():
+        mon = Monitor(cfg, client, sink)
+        await mon.tick()
+        client.visible = goal_idx  # händelsen finns inte än
+        await mon.tick()
+        score["h"] = 1  # men ställningen har ändrats
+        await mon.tick()
+        client.visible = goal_idx + 1  # nu kommer målet i händelselistan
+        await mon.tick()
+        await mon.tick()
+
+    asyncio.run(scenario())
+    goals = [t for t in sink.titles if t.startswith("🚨 MÅL")]
+    assert goals == ["🚨 MÅL! FBK 1–0 LHF"]
+    msg_id = sink.titles.index(goals[0]) + 1
+    assert "Marcus Sörensen" in sink.edits[msg_id].description

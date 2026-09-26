@@ -20,7 +20,7 @@ from pathlib import Path
 from .api import NotAvailable, SHLClient, is_playoff
 from .config import Config
 from .formatting import render
-from .models import GameInfo, GameStatus, extract_event_list, parse_events
+from .models import GameInfo, GameStatus, extract_event_list, parse_events, parse_status
 from .monitor import ConsoleSink, Monitor
 from .stats import parse_team_stats
 from .tracker import GameTracker
@@ -63,7 +63,23 @@ async def cmd_probe(cfg: Config, uuid: str) -> None:
                 print(f"  {len(raw)} händelser, typer: {dict(types)}")
                 keys = Counter(k for e in raw for k in e)
                 print(f"  fält: {sorted(keys)}")
-    print(f"Data sparad i {out}/ – kör 'python -m shlbot replay {out}' för att se notiserna.")
+        # Jämför färskhet med och utan cache-parameter
+        print("\nJämförelse av hur färsk datan är:")
+        for label, bust in (("med tidsstämpel", True), ("utan tidsstämpel", False)):
+            client.cache_bust = bust
+            try:
+                evs = parse_events(await client.play_by_play(uuid))
+                last = evs[-1] if evs else None
+                ov = await client.overview(uuid)
+                st = parse_status(ov, GameInfo.parse({"uuid": uuid}))
+                print(
+                    f"  {label}: {len(evs)} händelser, senaste "
+                    f"{f'P{last.period} {last.time} ({last.kind})' if last else '-'}, "
+                    f"klocka P{st.period} {st.clock}, ställning {st.home_score}-{st.away_score}"
+                )
+            except Exception as e:
+                print(f"  {label}: fel ({e})")
+    print(f"\nData sparad i {out}/ – kör 'python -m shlbot replay {out}' för att se notiserna.")
 
 
 def cmd_replay(directory: Path) -> None:
