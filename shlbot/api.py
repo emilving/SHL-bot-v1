@@ -17,6 +17,9 @@ log = logging.getLogger(__name__)
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; SHL-Discord-bot/1.0)",
     "Accept": "application/json",
+    # Be eventuella cache-servrar om färsk data
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
 }
 
 
@@ -34,7 +37,7 @@ class SHLClient:
 
     async def __aenter__(self) -> "SHLClient":
         if self._session is None:
-            self._session = aiohttp.ClientSession(headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15))
+            self._session = aiohttp.ClientSession(headers=HEADERS, timeout=aiohttp.ClientTimeout(total=8))
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -109,10 +112,10 @@ class SHLClient:
     # -- live-data ----------------------------------------------------------
 
     async def overview(self, uuid: str) -> Any:
-        return await self.get_json(self.url(self.config.overview_path, uuid))
+        return await self.get_json(self.url(self.config.overview_path, uuid), retries=1)
 
     async def play_by_play(self, uuid: str) -> Any:
-        return await self.get_json(self.url(self.config.pbp_path, uuid))
+        return await self.get_json(self.url(self.config.pbp_path, uuid), retries=1)
 
     async def team_stats(self, uuid: str) -> Any:
         if not self.config.team_stats_path:

@@ -241,3 +241,8 @@ def test_score_fallback_without_events(game):
 def test_no_score_fallback_when_events_have_goals(game, events):
     notes = run_live(GameTracker(game=game), events)
     assert not [n for n in notes if n.kind == "score_goal"]
+
+
+def test_intermission_from_clock(game):
+    ov = {"state": "ongoing", "gameTime": {"period": 1, "periodTime": "20:00"}}
+    assert parse_status(ov, game).phase == "intermission"

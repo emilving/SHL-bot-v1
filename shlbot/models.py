@@ -217,6 +217,10 @@ def parse_status(overview: Any, game: GameInfo) -> GameStatus:
     )
 
     has_own_state = first(ov, "state", "gameState", "status") is not None
+    # Klockan står på periodens slut (20:00) i period 1-3 = paus
+    if not intermission and period and period <= 3 and clk is not None and clock(clk) == "20:00":
+        intermission = True
+
     if is_final_state(state) or (not has_own_state and is_final_state(game.state)):
         phase = "final"
     elif intermission:

@@ -62,6 +62,7 @@ class Monitor:
         self.warned: set[str] = set()
         self.last_summary: dict[str, tuple] = {}
         self._schedule_at: datetime | None = None
+        self._schedule_task: asyncio.Task | None = None
         self._saved_state: dict[str, Any] = self._load_state()
 
     # -- state --------------------------------------------------------------
@@ -136,18 +137,24 @@ class Monitor:
     # -- polling ------------------------------------------------------------
 
     async def poll_game(self, game: GameInfo) -> None:
-        try:
-            pbp = await self.client.play_by_play(game.uuid)
-        except NotAvailable:
+        # Händelser och matchstatus hämtas samtidigt för att spara tid
+        pbp_res, ov_res = await asyncio.gather(
+            self.client.play_by_play(game.uuid), self.client.overview(game.uuid), return_exceptions=True
+        )
+        if isinstance(pbp_res, NotAvailable):
             if game.uuid not in self.warned:
                 log.warning("%s: händelselistan (play-by-play) finns inte hos SHL (404)", game.title)
                 self.warned.add(game.uuid)
             pbp = []
-        try:
-            overview = await self.client.overview(game.uuid)
-        except (NotAvailable, RuntimeError) as e:
-            log.debug("Ingen overview för %s: %s", game.uuid, e)
+        elif isinstance(pbp_res, BaseException):
+            raise pbp_res
+        else:
+            pbp = pbp_res
+        if isinstance(ov_res, BaseException):
+            log.debug("Ingen overview för %s: %s", game.uuid, ov_res)
             overview = None
+        else:
+            overview = ov_res
 
         team_stats = None
         if game.uuid not in self.no_team_stats:
@@ -175,7 +182,11 @@ class Monitor:
         t = self.tracker(game)
         notes = t.update(events, status, team_stats)
         for n in notes:
-            await self._deliver(t, n)
+            # Ett misslyckat meddelande får inte stoppa resten
+            try:
+                await self._deliver(t, n)
+            except Exception:
+                log.exception("%s: kunde inte posta notis av typen %s", game.title, n.kind)
         if notes:
             self._save_state()
 
@@ -188,17 +199,29 @@ class Monitor:
             edited = await self.sink.edit(t.messages[n.event.id], updated)
             if edited and not n.extra.get("scorer_changed"):
                 return
-        ids = await self.sink.send(n.game, [render(n, t.shootout_period)])
+        spec = render(n, t.shootout_period)
+        where = f" (händelse {n.event.period}:{n.event.time})" if n.event else ""
+        log.info("Postar i Discord: %s%s", spec.title, where)
+        ids = await self.sink.send(n.game, [spec])
         if n.kind == "event" and n.event and n.event.kind == GOAL and ids and ids[0]:
             t.messages[n.event.id] = ids[0]
 
-    async def tick(self) -> None:
+    async def _refresh_schedule_safe(self) -> None:
         try:
             await self.refresh_schedule()
         except Exception as e:  # nätverksfel ska inte stoppa bevakningen
             log.warning("Kunde inte hämta spelschemat: %s", e)
+
+    async def tick(self) -> None:
+        # Schemat hämtas i bakgrunden så att live-uppdateringarna inte behöver vänta på det
+        if not self.games:
+            await self._refresh_schedule_safe()
+        elif self._schedule_task is None or self._schedule_task.done():
+            self._schedule_task = asyncio.create_task(self._refresh_schedule_safe())
         games = self.active_games()
-        results = await asyncio.gather(*(self.poll_game(g) for g in games), return_exceptions=True)
+        results = await asyncio.gather(
+            *(asyncio.wait_for(self.poll_game(g), timeout=25) for g in games), return_exceptions=True
+        )
         for g, r in zip(games, results):
             if isinstance(r, Exception):
                 log.warning("Fel vid uppdatering av %s: %s", g.title, r, exc_info=r)
@@ -209,4 +232,6 @@ class Monitor:
             started = asyncio.get_running_loop().time()
             await self.tick()
             elapsed = asyncio.get_running_loop().time() - started
+            if elapsed > self.config.poll_interval:
+                log.warning("Uppdateringen tog %.1f sekunder (SHL svarar långsamt)", elapsed)
             await asyncio.sleep(max(1.0, self.config.poll_interval - elapsed))
