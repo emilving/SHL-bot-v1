@@ -208,12 +208,15 @@ def short_name(label: str) -> str:
 def goalie_table(game: GameInfo, stats: GameStats) -> str:
     if not stats.goalies:
         return ""
-    lines = [f"{'Målvakt':<18}{'Sk':>4}{'IM':>4}{'Rd':>4}{'Rd%':>7}"]
+    # Smal tabell så att den inte radbryts i mobilen
+    lines = [f"{'':<14}{'Rd':>6}{'IM':>3}{'Rd%':>6}"]
     for g in stats.goalies:
         pct = f"{100 * g.save_pct:.1f}" if g.save_pct is not None else "–"
-        name = f"{code(game, g.side)} {short_name(g.name)}"[:18]
-        lines.append(f"{name:<18}{g.shots_against:>4}{g.goals_against:>4}{g.saves:>4}{pct:>7}")
-    lines.append("Sk = skott mot, IM = insläppta mål, Rd = räddningar")
+        last = short_name(g.name).split(". ", 1)[-1]
+        name = f"{code(game, g.side)} {last}"[:14]
+        lines.append(f"{name:<14}{f'{g.saves}/{g.shots_against}':>6}{g.goals_against:>3}{pct:>6}")
+    lines.append("Rd = räddningar/skott mot")
+    lines.append("IM = insläppta mål")
     return "```\n" + "\n".join(lines) + "\n```"
 
 
@@ -235,10 +238,63 @@ def goal_line(game: GameInfo, e: Event, score: tuple[int, int] | None) -> str:
     return " ".join(parts)
 
 
+# SHL:s förkortningar för förseelser
+OFFENCES = {
+    "HOOK": "Hakning",
+    "HI-ST": "Hög klubba",
+    "TRIP": "Fällning",
+    "HOLD": "Fasthållning",
+    "HO-ST": "Fasthållning av klubba",
+    "INTRF": "Obstruktion",
+    "INTF": "Obstruktion",
+    "SLASH": "Slag",
+    "ROUGH": "Ruffning",
+    "CROSS": "Crosscheck",
+    "BOARD": "Boarding",
+    "CHARG": "Charging",
+    "ELBOW": "Armbåge",
+    "KNEE": "Knätackling",
+    "CHE-H": "Tackling mot huvudet",
+    "CHEHD": "Tackling mot huvudet",
+    "CHE-B": "Tackling bakifrån",
+    "CHEBH": "Tackling bakifrån",
+    "INTEF": "Obstruktion",
+    "DELAY": "Fördröjning av spelet",
+    "DELAY-G": "Fördröjning av spelet",
+    "TOO-M": "För många spelare på isen",
+    "TOOMA": "För många spelare på isen",
+    "UN-SP": "Osportsligt uppträdande",
+    "UNSPO": "Osportsligt uppträdande",
+    "UNSP": "Osportsligt uppträdande",
+    "DIVE": "Filmning",
+    "EMB": "Filmning",
+    "FIGHT": "Slagsmål",
+    "SPEAR": "Spjutning",
+    "BUTT": "Stötning med klubbskaft",
+    "KICK": "Sparkning",
+    "HEAD": "Skalltackling",
+    "MISC": "Tiominutersstraff",
+    "GM": "Matchstraff",
+    "MP": "Matchstraff",
+    "GAME": "Matchstraff",
+    "ABUSE": "Ovårdat språk",
+    "BENCH": "Lagstraff",
+    "INTER": "Obstruktion",
+    "BROKE": "Spel med bruten klubba",
+    "THROW": "Kastad klubba",
+    "PUCK": "Spela pucken med handen",
+    "HAND": "Spela pucken med handen",
+}
+
+
+def offence_text(offence: str) -> str:
+    return OFFENCES.get(offence.strip().upper(), offence)
+
+
 def penalty_line(game: GameInfo, e: Event) -> str:
     mins = f"{e.penalty_minutes} min" if e.penalty_minutes else "utvisning"
     who = e.player or "Lagstraff"
-    reason = f" – {e.offence}" if e.offence else ""
+    reason = f" – {offence_text(e.offence)}" if e.offence else ""
     return f"`{period_short(e.period)} {e.time}` **{code(game, e.side)}** {who} {mins}{reason}"
 
 
@@ -357,7 +413,7 @@ def render_event(n: Notification, shootout_period: int) -> EmbedSpec:
     elif e.kind == PENALTY:
         spec = EmbedSpec(f"⛔ Utvisning – {team}", color=COLORS["penalty"])
         mins = f"{e.penalty_minutes} min" if e.penalty_minutes else "Utvisning"
-        spec.description = f"**{e.player or 'Lagstraff'}** · {mins}" + (f"\n{e.offence}" if e.offence else "")
+        spec.description = f"**{e.player or 'Lagstraff'}** · {mins}" + (f"\n{offence_text(e.offence)}" if e.offence else "")
     elif e.kind == INJURY:
         spec = EmbedSpec(f"🩹 Skada – {team}", color=COLORS["injury"])
         spec.description = "\n".join(x for x in (f"**{e.player}**" if e.player else "", e.description or "") if x)
