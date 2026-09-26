@@ -37,9 +37,15 @@ class FakeClient:
 class Collect:
     def __init__(self):
         self.titles = []
+        self.edits = {}
 
     async def send(self, game, embeds):
         self.titles += [e.title for e in embeds]
+        return [len(self.titles) - len(embeds) + i + 1 for i in range(len(embeds))]
+
+    async def edit(self, message_id, spec):
+        self.edits[message_id] = spec
+        return True
 
 
 def test_monitor_end_to_end(tmp_path):
@@ -73,3 +79,27 @@ def test_monitor_end_to_end(tmp_path):
     mon2 = Monitor(cfg, client, sink2)
     asyncio.run(mon2.tick())
     assert sink2.titles == []
+
+
+def test_assist_added_later_edits_goal_message(tmp_path):
+    cfg = Config()
+    cfg.state_file = tmp_path / "state.json"
+    cfg.teams = set()
+    client, sink = FakeClient(), Collect()
+    goal_idx = next(i for i, e in enumerate(client.events) if e["type"] == "goal")
+    goal = client.events[goal_idx]
+    assists = goal.pop("assists")
+
+    async def scenario():
+        mon = Monitor(cfg, client, sink)
+        await mon.tick()
+        client.visible = goal_idx + 1
+        await mon.tick()
+        goal["assists"] = assists
+        await mon.tick()
+
+    asyncio.run(scenario())
+    assert sum(t.startswith("🚨 MÅL") for t in sink.titles) == 1
+    assert not any("korrigerat" in t for t in sink.titles)
+    goal_msg = sink.titles.index(next(t for t in sink.titles if t.startswith("🚨 MÅL"))) + 1
+    assert "Assist" in sink.edits[goal_msg].description

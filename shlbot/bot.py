@@ -48,11 +48,28 @@ class DiscordSink:
         self.client = client
         self.channel_id = channel_id
 
-    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> None:
-        channel = self.client.get_channel(self.channel_id) or await self.client.fetch_channel(self.channel_id)
+    async def _channel(self):
+        return self.client.get_channel(self.channel_id) or await self.client.fetch_channel(self.channel_id)
+
+    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> list[int | None]:
+        channel = await self._channel()
+        ids: list[int | None] = []
         for spec in embeds:
+            first_id = None
             for part in split_large(spec):
-                await channel.send(embed=to_discord(part))  # type: ignore[union-attr]
+                msg = await channel.send(embed=to_discord(part))  # type: ignore[union-attr]
+                first_id = first_id or msg.id
+            ids.append(first_id)
+        return ids
+
+    async def edit(self, message_id: int, spec: EmbedSpec) -> bool:
+        try:
+            channel = await self._channel()
+            await channel.get_partial_message(message_id).edit(embed=to_discord(spec))  # type: ignore[union-attr]
+            return True
+        except (discord.HTTPException, AttributeError) as e:
+            log.warning("Kunde inte redigera meddelande %s: %s", message_id, e)
+            return False
 
 
 class SHLBot(discord.Client):

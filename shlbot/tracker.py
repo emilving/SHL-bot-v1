@@ -60,6 +60,8 @@ class GameTracker:
     periods_posted: set[int] = field(default_factory=set)
     # Senast kända ställning, för mål-reserven när händelselistan saknar mål
     known_score: tuple[int, int] | None = None
+    # Discord-meddelanden för postade mål (event-id -> meddelande-id), för redigering
+    messages: dict[str, int] = field(default_factory=dict)
     last_events: list[Event] = field(default_factory=list, repr=False)
     last_stats: GameStats | None = field(default=None, repr=False)
     last_status: GameStatus | None = field(default=None, repr=False)
@@ -75,6 +77,7 @@ class GameTracker:
             "seen_kind": self.seen_kind,
             "periods_posted": sorted(self.periods_posted),
             "known_score": list(self.known_score) if self.known_score else None,
+            "messages": self.messages,
         }
 
     @classmethod
@@ -87,6 +90,7 @@ class GameTracker:
         t.seen_kind = dict(d.get("seen_kind") or {})
         t.periods_posted = set(d.get("periods_posted") or [])
         t.known_score = tuple(d["known_score"]) if d.get("known_score") else None
+        t.messages = {k: int(v) for k, v in (d.get("messages") or {}).items()}
         return t
 
     # -- hjälpare -----------------------------------------------------------
@@ -107,12 +111,18 @@ class GameTracker:
         return h, a
 
     def _score(self, events: list[Event], status: GameStatus | None) -> tuple[int, int]:
-        h = sum(1 for e in events if e.kind == GOAL and e.side == "home" and e.period < self.shootout_period)
-        a = sum(1 for e in events if e.kind == GOAL and e.side == "away" and e.period < self.shootout_period)
-        if status and status.home_score is not None and status.away_score is not None:
-            # Officiell ställning vinner (inkluderar t.ex. avgörande straffmål)
-            return status.home_score, status.away_score
-        return h, a
+        goals = [e for e in events if e.kind == GOAL and e.period < self.shootout_period]
+        official = (
+            (status.home_score, status.away_score)
+            if status and status.home_score is not None and status.away_score is not None
+            else None
+        )
+        # Slutresultatet tar med t.ex. avgörande straffmål
+        if official and (status.phase == "final" or not goals):
+            return official
+        if goals:
+            return self._score_after(events, goals[-1])
+        return 0, 0
 
     def _remember_score(self, status: GameStatus) -> None:
         if status.home_score is not None and status.away_score is not None:
@@ -236,8 +246,17 @@ class GameTracker:
                 elif e.kind == PERIOD_END:
                     self._maybe_period(out, e.period, events, stats, status)
             elif e.kind == GOAL and self.seen[e.id] != e.signature:
+                old_player = self.seen[e.id].split("~")[4] if self.seen[e.id].count("~") >= 4 else ""
                 self.seen[e.id] = e.signature
-                out.append(Notification("correction", self.game, event=e, score=self._score_after(events, e)))
+                out.append(
+                    Notification(
+                        "correction",
+                        self.game,
+                        event=e,
+                        score=self._score_after(events, e),
+                        extra={"scorer_changed": old_player != (e.player or "")},
+                    )
+                )
 
         if starters and self.post_starting_goalies:
             if start_note is not None:

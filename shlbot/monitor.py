@@ -12,9 +12,9 @@ from typing import Any, Protocol
 from .api import NotAvailable, SHLClient, is_playoff
 from .config import Config
 from .formatting import EmbedSpec, render
-from .models import STOCKHOLM, GameInfo, parse_events, parse_status
+from .models import GOAL, STOCKHOLM, GameInfo, parse_events, parse_status
 from .stats import parse_team_stats
-from .tracker import GameTracker
+from .tracker import GameTracker, Notification
 
 log = logging.getLogger(__name__)
 
@@ -25,13 +25,30 @@ MAX_GAME_LENGTH = timedelta(hours=6)
 
 
 class Sink(Protocol):
-    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> None: ...
+    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> list[int | None]:
+        """Skickar meddelanden och returnerar deras id:n (ett per embed)."""
+        ...
+
+    async def edit(self, message_id: int, spec: EmbedSpec) -> bool:
+        """Ersätter innehållet i ett tidigare meddelande. False om det inte gick."""
+        ...
 
 
 class ConsoleSink:
-    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> None:
+    def __init__(self) -> None:
+        self._next_id = 0
+
+    async def send(self, game: GameInfo, embeds: list[EmbedSpec]) -> list[int | None]:
+        ids: list[int | None] = []
         for spec in embeds:
             print(spec.as_text(), end="\n\n", flush=True)
+            self._next_id += 1
+            ids.append(self._next_id)
+        return ids
+
+    async def edit(self, message_id: int, spec: EmbedSpec) -> bool:
+        print(f"(meddelande {message_id} uppdaterat)\n{spec.as_text()}", end="\n\n", flush=True)
+        return True
 
 
 class Monitor:
@@ -157,10 +174,23 @@ class Monitor:
             )
         t = self.tracker(game)
         notes = t.update(events, status, team_stats)
+        for n in notes:
+            await self._deliver(t, n)
         if notes:
-            embeds = [render(n, t.shootout_period) for n in notes]
-            await self.sink.send(game, embeds)
             self._save_state()
+
+    async def _deliver(self, t: GameTracker, n: Notification) -> None:
+        # Rättelser (t.ex. assist som läggs till i efterhand) redigerar målmeddelandet
+        if n.kind == "correction" and n.event and n.event.id in t.messages:
+            updated = render(
+                Notification("event", n.game, event=n.event, score=n.score, status=n.status), t.shootout_period
+            )
+            edited = await self.sink.edit(t.messages[n.event.id], updated)
+            if edited and not n.extra.get("scorer_changed"):
+                return
+        ids = await self.sink.send(n.game, [render(n, t.shootout_period)])
+        if n.kind == "event" and n.event and n.event.kind == GOAL and ids and ids[0]:
+            t.messages[n.event.id] = ids[0]
 
     async def tick(self) -> None:
         try:
