@@ -289,6 +289,14 @@ def render(n: Notification, shootout_period: int = 5) -> EmbedSpec:
                 "\n".join(f"**{code(g, e.side)}** {e.player}" for e in goalies),
             )
         return spec
+    if n.kind == "score_goal":
+        side = n.extra.get("side")
+        spec = EmbedSpec(f"🚨 MÅL! {scoreline(g, n.score)}", color=COLORS["goal"])
+        spec.description = f"**{team_name(g, side)}** gör mål"
+        st = n.status
+        if st and st.period:
+            spec.footer = f"{period_name(st.period, shootout_period)} {st.clock or ''}".strip()
+        return spec
     if n.kind == "starters":
         spec = EmbedSpec("🥅 Startande målvakter", color=COLORS["goalie"])
         spec.description = "\n".join(f"**{code(g, e.side)}** {e.player}" for e in n.events)

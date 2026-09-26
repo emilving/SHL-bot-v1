@@ -224,3 +224,20 @@ def test_split_large_embed():
     assert len(parts) == 2
     assert sum(len(p.fields) for p in parts) == 10
     assert parts[-1].footer == "ft"
+
+
+def test_score_fallback_without_events(game):
+    t = GameTracker(game=game)
+    t.update([], GameStatus("pre", home_score=0, away_score=0))
+    assert t.update([], GameStatus("live", period=1, home_score=0, away_score=0))[0].kind == "start"
+    notes = t.update([], GameStatus("live", period=1, clock="05:00", home_score=1, away_score=0))
+    assert [(n.kind, n.score, n.extra["side"]) for n in notes] == [("score_goal", (1, 0), "home")]
+    notes = t.update([], GameStatus("live", period=2, home_score=2, away_score=1))
+    assert [n.score for n in notes] == [(2, 0), (2, 1)]
+    assert "MÅL" in render(notes[0]).title
+    assert t.update([], GameStatus("live", period=2, home_score=2, away_score=1)) == []
+
+
+def test_no_score_fallback_when_events_have_goals(game, events):
+    notes = run_live(GameTracker(game=game), events)
+    assert not [n for n in notes if n.kind == "score_goal"]

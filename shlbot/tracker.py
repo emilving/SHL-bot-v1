@@ -58,6 +58,8 @@ class GameTracker:
     seen_kind: dict[str, str] = field(default_factory=dict)
     missing: dict[str, int] = field(default_factory=dict)
     periods_posted: set[int] = field(default_factory=set)
+    # Senast kända ställning, för mål-reserven när händelselistan saknar mål
+    known_score: tuple[int, int] | None = None
     last_events: list[Event] = field(default_factory=list, repr=False)
     last_stats: GameStats | None = field(default=None, repr=False)
     last_status: GameStatus | None = field(default=None, repr=False)
@@ -72,6 +74,7 @@ class GameTracker:
             "seen": self.seen,
             "seen_kind": self.seen_kind,
             "periods_posted": sorted(self.periods_posted),
+            "known_score": list(self.known_score) if self.known_score else None,
         }
 
     @classmethod
@@ -83,6 +86,7 @@ class GameTracker:
         t.seen = dict(d.get("seen") or {})
         t.seen_kind = dict(d.get("seen_kind") or {})
         t.periods_posted = set(d.get("periods_posted") or [])
+        t.known_score = tuple(d["known_score"]) if d.get("known_score") else None
         return t
 
     # -- hjälpare -----------------------------------------------------------
@@ -109,6 +113,32 @@ class GameTracker:
             # Officiell ställning vinner (inkluderar t.ex. avgörande straffmål)
             return status.home_score, status.away_score
         return h, a
+
+    def _remember_score(self, status: GameStatus) -> None:
+        if status.home_score is not None and status.away_score is not None:
+            self.known_score = (status.home_score, status.away_score)
+
+    def _score_fallback(self, events: list[Event], status: GameStatus) -> list[Notification]:
+        """Postar mål utifrån ställningen när händelselistan inte innehåller några mål alls.
+
+        Skyddar mot att SHL:s händelselista saknas eller har ett okänt format.
+        """
+        previous = self.known_score
+        self._remember_score(status)
+        current = self.known_score
+        if previous is None or current is None or any(e.kind == GOAL for e in events):
+            return []
+        notes = []
+        h, a = previous
+        while (h, a) != current and (h <= current[0] and a <= current[1]):
+            if h < current[0]:
+                h += 1
+                side = "home"
+            else:
+                a += 1
+                side = "away"
+            notes.append(Notification("score_goal", self.game, score=(h, a), status=status, extra={"side": side}))
+        return notes
 
     def _goalie_note(self, events: list[Event], i: int, status: GameStatus) -> Notification | str | None:
         """Avgör om en målvaktshändelse ska postas.
@@ -167,6 +197,7 @@ class GameTracker:
                 self.periods_posted.update(range(1, current))
                 if status.phase in ("intermission", "final"):
                     self.periods_posted.add(current)
+                self._remember_score(status)
                 if game_over:
                     self.final_posted = True
                     return out
@@ -213,6 +244,8 @@ class GameTracker:
                 start_note.events = starters
             else:
                 out.insert(0, Notification("starters", self.game, events=starters))
+
+        out.extend(self._score_fallback(events, status))
 
         # Mål som försvunnit ur flödet = bortdömda (efter några uppdateringar i rad)
         if events:

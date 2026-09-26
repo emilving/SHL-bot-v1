@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections import Counter
 from datetime import datetime, timedelta
 from typing import Any, Protocol
 
@@ -41,6 +42,8 @@ class Monitor:
         self.games: dict[str, GameInfo] = {}
         self.trackers: dict[str, GameTracker] = {}
         self.no_team_stats: set[str] = set()
+        self.warned: set[str] = set()
+        self.last_summary: dict[str, tuple] = {}
         self._schedule_at: datetime | None = None
         self._saved_state: dict[str, Any] = self._load_state()
 
@@ -119,6 +122,9 @@ class Monitor:
         try:
             pbp = await self.client.play_by_play(game.uuid)
         except NotAvailable:
+            if game.uuid not in self.warned:
+                log.warning("%s: händelselistan (play-by-play) finns inte hos SHL (404)", game.title)
+                self.warned.add(game.uuid)
             pbp = []
         try:
             overview = await self.client.overview(game.uuid)
@@ -135,6 +141,20 @@ class Monitor:
 
         events = parse_events(pbp, game)
         status = parse_status(overview, game)
+        summary = (len(events), status.home_score, status.away_score, status.period)
+        if self.last_summary.get(game.uuid) != summary:
+            self.last_summary[game.uuid] = summary
+            kinds = Counter(e.kind for e in events)
+            log.info(
+                "%s %s–%s (period %s %s): %d händelser %s",
+                game.title,
+                status.home_score,
+                status.away_score,
+                status.period,
+                status.clock or "",
+                len(events),
+                dict(kinds),
+            )
         t = self.tracker(game)
         notes = t.update(events, status, team_stats)
         if notes:
