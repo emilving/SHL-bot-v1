@@ -3,13 +3,20 @@ chcp 65001 >nul
 cd /d "%~dp0"
 title SHL-boten
 
-rem Hitta Python (python eller py)
-set PY=python
-where python >nul 2>nul || set PY=py
-where %PY% >nul 2>nul || (
+rem Hitta en riktig Python (inte Windows genvag till Microsoft Store)
+set "PY="
+py -3 --version >nul 2>nul && set "PY=py -3"
+if not defined PY python --version >nul 2>nul && set "PY=python"
+if not defined PY (
   echo.
-  echo Hittar inte Python. Installera Python fran python.org och
-  echo kryssa i "Add python.exe to PATH" under installationen.
+  echo ==========================================================
+  echo  Python ar inte installerat.
+  echo.
+  echo  1. Ga till python.org/downloads och klicka Download Python
+  echo  2. Oppna filen och KRYSSA I "Add python.exe to PATH"
+  echo  3. Klicka Install Now
+  echo  4. Dubbelklicka pa den har filen igen
+  echo ==========================================================
   echo.
   pause
   exit /b 1
