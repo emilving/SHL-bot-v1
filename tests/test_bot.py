@@ -270,3 +270,24 @@ def test_missed_shots_not_counted(game, events):
     )
     s = compute(events + missed, game_over=True)
     assert s.total().home.shots == 7
+
+
+def test_reports_only_list_match_penalties(game, events):
+    from shlbot.formatting import is_match_penalty
+
+    match_pen = parse_event(
+        {"type": "penalty", "id": "mp", "period": 3, "time": "10:00", "eventTeam": {"place": "away"},
+         "player": {"firstName": "A", "familyName": "B"}, "offence": "GM", "variant": {"minorTime": "20"}},
+        game,
+    )
+    assert is_match_penalty(match_pen)
+    assert not any(is_match_penalty(e) for e in events)  # bara 2-minutersutvisningar
+
+    notes = run_live(GameTracker(game=game), events + [match_pen])
+    final = render(notes[-1])
+    names = [f[0] for f in final.fields]
+    assert "Matchstraff" in names and "Utvisningar" not in names
+    period2 = render(next(n for n in notes if n.kind == "period" and n.period == 2))
+    assert not any(f[0].startswith("Matchstraff") for f in period2.fields)
+    live = next(n for n in notes if n.kind == "event" and n.event.id == match_pen.id)
+    assert render(live).title.startswith("🟥 Matchstraff")

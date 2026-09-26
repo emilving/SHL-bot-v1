@@ -323,8 +323,17 @@ def goal_list(game: GameInfo, events: list[Event], shootout_period: int) -> str:
     return "\n".join(lines)
 
 
+def is_match_penalty(e: Event) -> bool:
+    """Matchstraff (inklusive 5 min + game misconduct), inte vanliga utvisningar eller 10 min."""
+    if e.kind != PENALTY:
+        return False
+    code = (e.offence or "").strip().upper()
+    return (e.penalty_minutes or 0) >= 20 or code in ("GM", "MP", "GAME", "GA-MI") or "MATCH" in code
+
+
 def penalty_list(game: GameInfo, events: list[Event]) -> str:
-    return "\n".join(penalty_line(game, e) for e in events if e.kind == PENALTY)
+    """Rapporterna tar bara med matchstraff."""
+    return "\n".join(penalty_line(game, e) for e in events if is_match_penalty(e))
 
 
 def period_scores(game: GameInfo, stats: GameStats, shootout_period: int) -> str:
@@ -420,7 +429,10 @@ def render_event(n: Notification, shootout_period: int) -> EmbedSpec:
             footer += f" · {lbl}"
         spec.description = "\n".join(lines)
     elif e.kind == PENALTY:
-        spec = EmbedSpec(f"⛔ Utvisning – {team}", color=COLORS["penalty"])
+        if is_match_penalty(e):
+            spec = EmbedSpec(f"🟥 Matchstraff – {team}", color=COLORS["injury"])
+        else:
+            spec = EmbedSpec(f"⛔ Utvisning – {team}", color=COLORS["penalty"])
         mins = f"{e.penalty_minutes} min" if e.penalty_minutes else "Utvisning"
         spec.description = f"**{e.player or 'Lagstraff'}** · {mins}" + (f"\n{offence_text(e.offence)}" if e.offence else "")
     elif e.kind == INJURY:
@@ -461,7 +473,7 @@ def render_period(n: Notification, shootout_period: int) -> EmbedSpec:
     )
     in_period = [e for e in n.events if e.period == p]
     spec.add(f"Mål i {period_short(p)}", goal_list_for_period(g, n.events, p, shootout_period) or "Inga mål")
-    spec.add(f"Utvisningar i {period_short(p)}", penalty_list(g, in_period) or "Inga utvisningar")
+    spec.add(f"Matchstraff i {period_short(p)}", penalty_list(g, in_period))
     st = stats.periods.get(p)
     if st:
         spec.add(f"Statistik {period_short(p)}", stat_table(g, st.home, st.away, stats.has_faceoffs))
@@ -490,7 +502,7 @@ def render_final(n: Notification, shootout_period: int) -> EmbedSpec:
     spec = EmbedSpec(f"🏁 Slutresultat: {scoreline(g, n.score)}{suffix}", color=COLORS["final"])
     spec.description = f"**{g.title}** {period_scores(g, stats, shootout_period)}"
     spec.add("Mål", goal_list(g, n.events, shootout_period) or "Inga mål")
-    spec.add("Utvisningar", penalty_list(g, n.events) or "Inga utvisningar")
+    spec.add("Matchstraff", penalty_list(g, n.events))
     tot = stats.total()
     spec.add("Statistik – hela matchen", stat_table(g, tot.home, tot.away, stats.has_faceoffs))
     spec.add("Per period", per_period_table(g, stats, shootout_period))
