@@ -23,6 +23,7 @@ from .models import (
     GameInfo,
     GameStatus,
     clock_seconds,
+    is_match_penalty,
 )
 from .stats import GameStats, GoalieLine, PeriodStats, compute
 
@@ -64,6 +65,8 @@ class GameTracker:
     pending: dict[str, list[str]] = field(default_factory=lambda: {"home": [], "away": []})
     # Discord-meddelanden för postade mål (event-id -> meddelande-id), för redigering
     messages: dict[str, int] = field(default_factory=dict)
+    # Lag ("home"/"away") vars uppställningsförändringar redan kontrollerats
+    lineup_done: list[str] = field(default_factory=list)
     last_events: list[Event] = field(default_factory=list, repr=False)
     last_stats: GameStats | None = field(default=None, repr=False)
     last_status: GameStatus | None = field(default=None, repr=False)
@@ -81,6 +84,7 @@ class GameTracker:
             "score_announced": self.score_announced,
             "pending": self.pending,
             "messages": self.messages,
+            "lineup_done": self.lineup_done,
         }
 
     @classmethod
@@ -95,6 +99,7 @@ class GameTracker:
         t.score_announced = list(d.get("score_announced") or [0, 0])
         t.pending = {"home": [], "away": [], **(d.get("pending") or {})}
         t.messages = {k: int(v) for k, v in (d.get("messages") or {}).items()}
+        t.lineup_done = list(d.get("lineup_done") or [])
         return t
 
     # -- hjälpare -----------------------------------------------------------
@@ -241,6 +246,8 @@ class GameTracker:
                         starters.append(e)
                     elif note is not None:
                         out.append(note)
+                elif e.kind == PENALTY and not is_match_penalty(e):
+                    continue  # bara matchstraff postas
                 elif e.kind in INSTANT_KINDS:
                     extra = {}
                     if e.kind == GOAL and e.side in ("home", "away") and self.pending.get(e.side):

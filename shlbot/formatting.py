@@ -17,6 +17,7 @@ from .models import (
     Event,
     GameInfo,
     first,
+    is_match_penalty,
     strength_kind,
     truthy,
 )
@@ -323,14 +324,6 @@ def goal_list(game: GameInfo, events: list[Event], shootout_period: int) -> str:
     return "\n".join(lines)
 
 
-def is_match_penalty(e: Event) -> bool:
-    """Matchstraff (inklusive 5 min + game misconduct), inte vanliga utvisningar eller 10 min."""
-    if e.kind != PENALTY:
-        return False
-    code = (e.offence or "").strip().upper()
-    return (e.penalty_minutes or 0) >= 20 or code in ("GM", "MP", "GAME", "GA-MI") or "MATCH" in code
-
-
 def penalty_list(game: GameInfo, events: list[Event]) -> str:
     """Rapporterna tar bara med matchstraff."""
     return "\n".join(penalty_line(game, e) for e in events if is_match_penalty(e))
@@ -387,6 +380,18 @@ def render(n: Notification, shootout_period: int = 5) -> EmbedSpec:
             )
             if st and st.period:
                 spec.footer = f"{period_name(st.period, shootout_period)} {st.clock or ''}".strip()
+        return spec
+    if n.kind == "lineup":
+        team = n.extra["team"]
+        spec = EmbedSpec(f"📋 Förändringar i {team.code}:s uppställning", color=COLORS["info"])
+        prev = n.extra.get("previous")
+        spec.description = f"{g.title}\nJämfört med förra matchen" + (f" ({prev})" if prev else "") + "."
+        missing, new = n.extra.get("missing") or [], n.extra.get("new") or []
+        if not missing and not new:
+            spec.description += "\n\nSamma spelare som förra matchen."
+        spec.add("Saknas", "\n".join(missing))
+        spec.add("Nya i laguppställningen", "\n".join(new))
+        spec.footer = "Orsaken (skada, sjukdom, vila m.m.) framgår inte av laguppställningen."
         return spec
     if n.kind == "starters":
         spec = EmbedSpec("🥅 Startande målvakter", color=COLORS["goalie"])

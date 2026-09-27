@@ -153,7 +153,7 @@ def test_full_game(game, events):
     assert kinds[-1] == "final"
     posted = [n.event.kind for n in notes if n.kind == "event"]
     assert posted.count(GOAL) == 4
-    assert posted.count(PENALTY) == 3
+    assert posted.count(PENALTY) == 0  # vanliga utvisningar postas inte, bara matchstraff
     assert posted.count(INJURY) == 1
     # Byte = en notis, tom kasse sent i P3 = en notis
     assert posted.count(GOALIE_IN) == 1 and posted.count(GOALIE_OUT) == 1

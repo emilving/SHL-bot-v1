@@ -92,3 +92,73 @@ def test_goalkeeper_summary_and_official_stats(game=None):
     tot = stats.total()
     assert (tot.home.shots, tot.away.shots) == (10, 9)
     assert (tot.home.saves, tot.away.saves) == (8, 7)
+
+
+def test_parse_lineup():
+    from shlbot.swehockey import parse_lineup
+
+    lu = parse_lineup((FIX / "lineup_prev.html").read_text("utf-8"), ["Färjestad BK", "FBK"], ["Luleå Hockey", "LHF"])
+    assert lu["home"]["linus johansson"] == "#21 Linus Johansson"
+    assert len(lu["home"]) == 16 and "anton lindholm" in lu["away"]
+    assert "dan domare" not in lu["away"]  # domare räknas inte som spelare
+
+
+def test_lineup_changes_posted(tmp_path):
+    import asyncio
+    from datetime import datetime, timedelta
+
+    from shlbot.formatting import render
+    from shlbot.models import STOCKHOLM
+    from shlbot.swehockey import parse_lineup
+
+    now = datetime.now(STOCKHOLM)
+
+    def game(uuid, home, hname, away, aname, start):
+        return GameInfo.parse(
+            {
+                "uuid": uuid,
+                "startDateTime": start.strftime("%Y-%m-%d %H:%M:%S"),
+                "homeTeamInfo": {"code": home, "names": {"long": hname}},
+                "awayTeamInfo": {"code": away, "names": {"long": aname}},
+            }
+        )
+
+    prev = game("prev", "FBK", "Färjestad BK", "LHF", "Luleå Hockey", now - timedelta(days=3))
+    cur = game("cur", "FBK", "Färjestad BK", "RBK", "Rögle BK", now + timedelta(minutes=30))
+    pages = {1: "lineup_prev.html", 2: "lineup_current.html"}
+
+    class FakeSwe:
+        async def find_game_id(self, day, home, away):
+            return 1 if "Luleå" in away else 2
+
+        async def lineup(self, game_id, home_names, away_names):
+            return parse_lineup((FIX / pages[game_id]).read_text("utf-8"), home_names, away_names)
+
+    class Sink:
+        def __init__(self):
+            self.specs = []
+
+        async def send(self, game, embeds):
+            self.specs += embeds
+            return [1]
+
+        async def edit(self, *a):
+            return True
+
+    cfg = Config()
+    cfg.state_file = tmp_path / "s.json"
+    cfg.teams = {"FBK"}
+    sink = Sink()
+    mon = Monitor(cfg, client=None, sink=sink, swe=FakeSwe())
+    mon.games = {g.uuid: g for g in (prev, cur)}
+    asyncio.run(mon.check_lineups(cur))
+    assert len(sink.specs) == 1  # bara FBK följs
+    spec = sink.specs[0]
+    assert spec.title == "📋 Förändringar i FBK:s uppställning"
+    fields = dict((f[0], f[1]) for f in spec.fields)
+    assert fields["Saknas"] == "#91 Marcus Sörensen\n#22 Anders Andersson"
+    assert fields["Nya i laguppställningen"] == "#29 Namn Nytt"
+    # Postas bara en gång
+    mon.lineup_at.clear()
+    asyncio.run(mon.check_lineups(cur))
+    assert len(sink.specs) == 1

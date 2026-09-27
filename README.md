@@ -2,8 +2,11 @@
 
 En Discord-bot som följer SHL-matcher live och postar i en kanal:
 
-- **Var 10:e sekund:** mål (målskytt, assist, ställning, PP/boxplay/tom kasse), utvisningar
-  (spelare, minuter, förseelse), skador, målvaktsbyten och tom kasse sent i matchen.
+- **Var 10:e sekund:** mål (målskytt, assist, ställning, PP/boxplay/tom kasse), matchstraff,
+  skador (om SHL rapporterar dem), målvaktsbyten och tom kasse sent i matchen. Vanliga
+  utvisningar postas inte, men utvisningsminuter och PP/PK finns med i statistiken.
+- **Före nedsläpp:** förändringar i laguppställningen jämfört med lagets förra match (vilka som
+  saknas och vilka som är nya), från stats.swehockey.se. Orsaken framgår inte.
 - **Efter varje period:** mål och utvisningar i perioden, periodens statistik och totalt i matchen
   (skott på mål, räddningar, räddning%, utvisningsminuter, PP, PP%, PK%, boxplaymål, tekningar m.m.)
   samt målvaktsstatistik.
@@ -52,6 +55,7 @@ av Tiimber (MIT-licens).
 
 ```bash
 python -m shlbot games              # dagens matcher med uuid
+python -m shlbot lineups [DATUM]    # testa laguppställningar (Windows: testa-uppstallning.bat)
 python -m shlbot compare            # jämför SHL och stats.swehockey.se live (Windows: jamfor-kallor.bat)
 python -m shlbot run --dry-run      # bevaka live men skriv i terminalen i stället för Discord
 python -m shlbot probe <uuid>       # spara SHL:s rådata för en match i probe/<uuid>/

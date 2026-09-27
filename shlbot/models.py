@@ -490,3 +490,11 @@ def dedupe(events: Iterable[Event]) -> list[Event]:
             seen.add(ev.id)
             out.append(ev)
     return out
+
+
+def is_match_penalty(e: Event) -> bool:
+    """Matchstraff (inklusive 5 min + game misconduct), inte vanliga utvisningar eller 10 min."""
+    if e.kind != PENALTY:
+        return False
+    code = (e.offence or "").strip().upper()
+    return (e.penalty_minutes or 0) >= 20 or code in ("GM", "MP", "GAME", "GA-MI") or "MATCH" in code

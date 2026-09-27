@@ -26,6 +26,11 @@ PRE_GAME_WINDOW = timedelta(minutes=10)
 # så att SHL:s händelser hinner ikapp
 SWE_PAUSE_DELAY = 180
 SWE_FINAL_DELAY = 300
+# Laguppställningar kontrolleras från 90 min före till 30 min efter nedsläpp, varannan minut
+LINEUP_BEFORE_START = 90 * 60
+LINEUP_AFTER_START = 30 * 60
+LINEUP_RETRY = 120
+MIN_LINEUP = 12  # färre spelare = uppställningen är inte publicerad än
 # Längsta tid en match kan pågå innan vi slutar polla den
 MAX_GAME_LENGTH = timedelta(hours=6)
 
@@ -68,6 +73,8 @@ class Monitor:
         self.swe_lookup_at: dict[str, float] = {}
         self.swe_last: dict[str, SweGame] = {}
         self.swe_since: dict[tuple[str, str], float] = {}
+        self.lineup_at: dict[str, float] = {}
+        self._lineup_task: asyncio.Task | None = None
         self.games: dict[str, GameInfo] = {}
         self.trackers: dict[str, GameTracker] = {}
         self.no_team_stats: set[str] = set()
@@ -213,7 +220,8 @@ class Monitor:
 
     # -- stats.swehockey.se ---------------------------------------------------
 
-    async def swe_game(self, game: GameInfo) -> SweGame | None:
+    async def swe_id(self, game: GameInfo) -> int | None:
+        """Matchens id på stats.swehockey.se (söks upp högst varannan minut tills den hittas)."""
         if self.swe is None or not game.start:
             return None
         now = time.monotonic()
@@ -231,13 +239,85 @@ class Monitor:
                 log.warning("%s: hittar inte matchen på stats.swehockey.se", game.title)
                 return None
             log.info("%s: följer även stats.swehockey.se (match %s)", game.title, self.swe_ids[game.uuid])
+        return self.swe_ids.get(game.uuid)
+
+    async def swe_game(self, game: GameInfo) -> SweGame | None:
+        if await self.swe_id(game) is None:
+            return None
         try:
-            data = await self.swe.game(self.swe_ids[game.uuid])  # type: ignore[arg-type]
+            data = await self.swe.game(self.swe_ids[game.uuid])  # type: ignore[arg-type,union-attr]
         except Exception as e:
             log.debug("%s: swehockey-fel: %s", game.title, e)
             return None
         self.swe_last[game.uuid] = data
         return data
+
+    # -- laguppställningar -----------------------------------------------------
+
+    def previous_game(self, game: GameInfo, code: str) -> GameInfo | None:
+        earlier = [
+            g
+            for g in self.games.values()
+            if g.uuid != game.uuid and g.start and game.start and g.start < game.start
+            and code in (g.home.code, g.away.code)
+        ]
+        return max(earlier, key=lambda g: g.start, default=None)  # type: ignore[arg-type,return-value]
+
+    async def _lineup(self, game: GameInfo) -> dict[str, dict[str, str]] | None:
+        game_id = await self.swe_id(game)
+        if game_id is None or self.swe is None:
+            return None
+        return await self.swe.lineup(game_id, [game.home.name, game.home.code], [game.away.name, game.away.code])
+
+    async def check_lineups(self, game: GameInfo) -> None:
+        """Postar vilka spelare som saknas (och är nya) jämfört med lagets förra match."""
+        t = self.tracker(game)
+        sides = [
+            side
+            for side, team in (("home", game.home), ("away", game.away))
+            if side not in t.lineup_done and self.config.follows(team.code)
+        ]
+        if not sides or self.swe is None:
+            return
+        now = time.monotonic()
+        if now - self.lineup_at.get(game.uuid, -1e9) < LINEUP_RETRY:
+            return
+        self.lineup_at[game.uuid] = now
+        current = await self._lineup(game)
+        if not current:
+            return
+        for side in sides:
+            team = game.home if side == "home" else game.away
+            if len(current[side]) < MIN_LINEUP:
+                continue  # inte publicerad än
+            prev = self.previous_game(game, team.code)
+            prev_lineup = await self._lineup(prev) if prev else None
+            prev_side = "home" if prev and prev.home.code == team.code else "away"
+            t.lineup_done.append(side)
+            if not prev or not prev_lineup or len(prev_lineup[prev_side]) < MIN_LINEUP:
+                log.info("%s: ingen tidigare uppställning att jämföra med för %s", game.title, team.code)
+                continue
+            before, now_players = prev_lineup[prev_side], current[side]
+            opponent = prev.away if prev_side == "home" else prev.home
+            note = Notification(
+                "lineup",
+                game,
+                extra={
+                    "team": team,
+                    "missing": [before[k] for k in before if k not in now_players],
+                    "new": [now_players[k] for k in now_players if k not in before],
+                    "previous": (
+                        f"mot {opponent.name} {prev.start.astimezone(STOCKHOLM).day}/{prev.start.astimezone(STOCKHOLM).month}"
+                        if prev.start
+                        else ""
+                    ),
+                },
+            )
+            try:
+                await self._deliver(t, note)
+            except Exception:
+                log.exception("%s: kunde inte posta uppställning", game.title)
+        self._save_state()
 
     def official_goalies(self, game: GameInfo, t: GameTracker, swe: SweGame | None) -> list[GoalieLine] | None:
         """Målvaktsstatistik från swehockey (officiell), med rätt lag kopplat till varje målvakt."""
@@ -348,6 +428,22 @@ class Monitor:
         for g, r in zip(games, results):
             if isinstance(r, Exception):
                 log.warning("Fel vid uppdatering av %s: %s", g.title, r, exc_info=r)
+        # Laguppställningar i bakgrunden så att live-uppdateringarna inte väntar
+        if self.swe is not None and (self._lineup_task is None or self._lineup_task.done()):
+            self._lineup_task = asyncio.create_task(self.check_upcoming_lineups())
+
+    async def check_upcoming_lineups(self) -> None:
+        now = datetime.now(STOCKHOLM)
+        upcoming = [
+            g
+            for g in self.games.values()
+            if g.start and -LINEUP_AFTER_START < (g.start - now).total_seconds() < LINEUP_BEFORE_START
+        ]
+        for g in upcoming:
+            try:
+                await self.check_lineups(g)
+            except Exception as e:
+                log.warning("%s: kunde inte läsa laguppställningen: %s", g.title, e)
 
     async def run_forever(self) -> None:
         log.info("Bevakar SHL var %s:e sekund", self.config.poll_interval)

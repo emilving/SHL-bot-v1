@@ -3,6 +3,7 @@
     python -m shlbot run            Starta Discord-boten
     python -m shlbot run --dry-run  Kör bevakningen men skriv notiser i terminalen
     python -m shlbot games          Lista dagens matcher (med matchens uuid)
+    python -m shlbot lineups [DATUM] Testa laguppställningar från stats.swehockey.se
     python -m shlbot compare        Jämför SHL och stats.swehockey.se live
     python -m shlbot probe UUID     Spara rå JSON för en match i probe/UUID/
     python -m shlbot replay DIR     Spela upp sparad data och visa alla notiser
@@ -132,6 +133,32 @@ async def cmd_compare(cfg: Config, rounds: int) -> None:
             await asyncio.sleep(10)
 
 
+async def cmd_lineups(cfg: Config, day: str | None) -> None:
+    """Visar hur laguppställningarna tolkas och vad boten skulle posta."""
+    import tempfile
+    from datetime import date as date_cls
+
+    cfg.state_file = Path(tempfile.mkdtemp()) / "state.json"  # rör inte botens riktiga state
+    target = date_cls.fromisoformat(day) if day else datetime.now(STOCKHOLM).date()
+    async with SHLClient(cfg) as client, SweHockeyClient() as swe:
+        mon = Monitor(cfg, client, ConsoleSink(), swe)
+        await mon.refresh_schedule(force=True)
+        games = [g for g in mon.games.values() if g.start and g.start.astimezone(STOCKHOLM).date() == target]
+        if not games:
+            print(f"Inga matcher {target}.")
+        for g in games:
+            print(f"== {g.title}")
+            lineup = await mon._lineup(g)
+            if not lineup:
+                print("  Hittar inte matchen eller laguppställningen på stats.swehockey.se\n")
+                continue
+            for side, team in (("home", g.home), ("away", g.away)):
+                players = list(lineup[side].values())
+                print(f"  {team.code}: {len(players)} spelare: {', '.join(players[:6])}{' …' if len(players) > 6 else ''}")
+            await mon.check_lineups(g)
+            print()
+
+
 def cmd_replay(directory: Path) -> None:
     """Spelar upp en sparad match händelse för händelse, som om den pågick live."""
 
@@ -165,6 +192,8 @@ def main(argv: list[str] | None = None) -> None:
     run = sub.add_parser("run", help="starta boten")
     run.add_argument("--dry-run", action="store_true", help="skriv notiser i terminalen i stället för Discord")
     sub.add_parser("games", help="lista dagens matcher")
+    lineups = sub.add_parser("lineups", help="testa laguppställningar från stats.swehockey.se")
+    lineups.add_argument("date", nargs="?", help="datum, t.ex. 2026-09-26 (standard: idag)")
     compare = sub.add_parser("compare", help="jämför SHL och stats.swehockey.se live")
     compare.add_argument("--rounds", type=int, default=30)
     probe = sub.add_parser("probe", help="spara rå JSON för en match")
@@ -183,6 +212,8 @@ def main(argv: list[str] | None = None) -> None:
         asyncio.run(cmd_games(cfg))
     elif args.cmd == "probe":
         asyncio.run(cmd_probe(cfg, args.uuid))
+    elif args.cmd == "lineups":
+        asyncio.run(cmd_lineups(cfg, args.date))
     elif args.cmd == "compare":
         asyncio.run(cmd_compare(cfg, args.rounds))
     elif args.cmd == "replay":

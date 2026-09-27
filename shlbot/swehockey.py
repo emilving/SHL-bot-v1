@@ -277,5 +277,80 @@ class SweHockeyClient:
             game_id = find_game(await self.games_on(day, refresh=True), home, away)
         return game_id
 
+    async def lineup(self, game_id: int, home_names: list[str], away_names: list[str]) -> dict[str, dict[str, str]]:
+        return parse_lineup(await self._html(f"/Game/LineUps/{game_id}"), home_names, away_names)
+
     async def game(self, game_id: int) -> SweGame:
         return parse_game_page(await self._html(f"/Game/Events/{game_id}"))
+
+
+# ---------------------------------------------------------------------------
+# Laguppställningar (Game/LineUps/{id})
+# ---------------------------------------------------------------------------
+
+_LINEUP_PLAYER_RE = re.compile(r"^(\d{1,2})\.?\s+([^\d].*)$")
+_NUMBER_ONLY_RE = re.compile(r"^(\d{1,2})\.?$")
+_NOT_PLAYERS_RE = re.compile(r"referee|linesm|domare|linjedomare|coach|tränare|staff|ledare", re.I)
+
+
+def _lineup_name(raw: str) -> str | None:
+    name = re.sub(r"\(.*?\)", "", raw).strip().rstrip(",")
+    if not re.search(r"[A-Za-zÅÄÖåäöÉéÜü]{2}", name):
+        return None
+    if "," in name:
+        last, first = name.split(",", 1)
+        name = f"{first.strip()} {last.strip()}"
+    return " ".join(name.split())
+
+
+def parse_lineup(html: str, home_names: list[str], away_names: list[str]) -> dict[str, dict[str, str]]:
+    """Spelare per lag: {"home": {normaliserat namn: "#22 Linus Johansson"}, "away": {...}}.
+
+    Sidans upplägg är inte dokumenterat. Läsaren går igenom texten i ordning,
+    byter lag när ett lagnamn eller en lagkod dyker upp som egen rubrik, och
+    tar med rader av typen "22. Johansson, Linus" (eller "22" följt av namnet).
+    Domare och ledare hoppas över.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    m = re.match(r"\s*(\S+)\s*-\s*(\S+)", title)
+    if m:
+        home_names = [*home_names, m.group(1)]
+        away_names = [*away_names, m.group(2)]
+
+    def team_of(text: str) -> str | None:
+        if len(text) > 40 or re.search(r"\d+\.", text):
+            return None
+        for side, names in (("home", home_names), ("away", away_names)):
+            for n in names:
+                if text.strip().lower() == n.strip().lower() or (len(text) > 4 and same_team(text, n)):
+                    return side
+        return None
+
+    out: dict[str, dict[str, str]] = {"home": {}, "away": {}}
+    current: str | None = None
+    strings = [" ".join(s.split()) for s in soup.body.stripped_strings] if soup.body else []
+    i = 0
+    while i < len(strings):
+        text = strings[i]
+        side = team_of(text)
+        if side:
+            current = side
+        elif _NOT_PLAYERS_RE.search(text) and not _LINEUP_PLAYER_RE.match(text):
+            current = None
+        elif current:
+            number = name = None
+            pm = _LINEUP_PLAYER_RE.match(text)
+            nm = _NUMBER_ONLY_RE.match(text)
+            if pm:
+                number, name = pm.group(1), _lineup_name(pm.group(2))
+            elif nm and i + 1 < len(strings) and not _NUMBER_ONLY_RE.match(strings[i + 1]):
+                number, name = nm.group(1), _lineup_name(strings[i + 1])
+                if name and team_of(strings[i + 1]) is None:
+                    i += 1
+                else:
+                    name = None
+            if name:
+                out[current].setdefault(name.lower(), f"#{number} {name}")
+        i += 1
+    return out
