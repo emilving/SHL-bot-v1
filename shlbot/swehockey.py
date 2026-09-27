@@ -56,7 +56,9 @@ def same_team(a: str, b: str) -> bool:
     if any(x[:5] == y[:5] for x in _name_tokens(a) for y in _name_tokens(b)):
         return True
     ca, cb = _compact(a), _compact(b)
-    return len(ca) >= 4 and ca[:5] == cb[:5]
+    if min(len(ca), len(cb)) < 4:
+        return False
+    return ca[:5] == cb[:5] or ca.startswith(cb) or cb.startswith(ca)
 
 
 def _player_name(raw: str) -> str:
@@ -350,6 +352,9 @@ def parse_lineup(html: str, home_names: list[str], away_names: list[str]) -> dic
 
     def team_of(text: str) -> str | None:
         if len(text) > 40 or re.search(r"\d+\.", text):
+            return None
+        text = re.sub(r"\(.*?\)", "", text).strip()  # "HV 71 (White)" -> "HV 71"
+        if not text:
             return None
         for side, names in (("home", home_names), ("away", away_names)):
             for n in names:

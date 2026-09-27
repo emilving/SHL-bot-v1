@@ -195,3 +195,12 @@ def test_official_period_stats_used():
     info = GameInfo.parse({"uuid": "x", "homeTeamInfo": {"code": "BIF"}, "awayTeamInfo": {"code": "LHF"}})
     assert "Skott BIF   15   9  10  34" in per_period_table(info, stats, 5)
     assert "Skott på mål     34    18" in stat_table(info, tot.home, tot.away, False)
+
+
+def test_team_header_with_space_and_colour():
+    from shlbot.swehockey import parse_lineup
+
+    html = (FIX / "lineup_real.html").read_text("utf-8").replace("Luleå HF (Red)", "HV 71 (White)")
+    lu = parse_lineup(html, ["Växjö Lakers", "VLH"], ["HV71", "HV71"])
+    assert len(lu["away"]) == 22
+    assert same_team("HV 71", "HV71")
