@@ -162,3 +162,36 @@ def test_lineup_changes_posted(tmp_path):
     mon.lineup_at.clear()
     asyncio.run(mon.check_lineups(cur))
     assert len(sink.specs) == 1
+
+
+def test_real_lineup_layout():
+    from shlbot.swehockey import parse_lineup
+
+    lu = parse_lineup((FIX / "lineup_real.html").read_text("utf-8"), ["Brynäs IF", "BIF"], ["Luleå Hockey", "LHF"])
+    assert len(lu["home"]) == 22 and len(lu["away"]) == 22
+    assert lu["home"]["magnus chrona"] == "#30 Magnus Chrona"
+    assert lu["home"]["charlie forslund"] == "#34 Charlie Forslund"
+    assert "niklas gällstedt" not in lu["home"]  # tränare
+    assert lu["away"]["joel lassinantti"] == "#34 Joel Lassinantti"
+
+
+def test_header_period_stats():
+    g = parse_game_page((FIX / "header_stats.html").read_text("utf-8"))
+    assert g.shots == {"home": [15, 9, 10], "away": [4, 12, 2]}
+    assert g.saves == {"home": [4, 10, 2], "away": [13, 8, 9]}
+    assert (g.home_score, g.away_score) == (4, 2) and g.final
+
+
+def test_official_period_stats_used():
+    from shlbot.formatting import per_period_table, stat_table
+    from shlbot.stats import compute
+
+    g = parse_game_page((FIX / "header_stats.html").read_text("utf-8"))
+    stats = compute([], official_periods={"shots": g.shots, "saves": g.saves})
+    assert [stats.periods[p].home.shots for p in (1, 2, 3)] == [15, 9, 10]
+    assert [stats.periods[p].away.saves for p in (1, 2, 3)] == [13, 8, 9]
+    tot = stats.total()
+    assert (tot.home.shots, tot.away.shots, tot.home.saves, tot.away.saves) == (34, 18, 16, 30)
+    info = GameInfo.parse({"uuid": "x", "homeTeamInfo": {"code": "BIF"}, "awayTeamInfo": {"code": "LHF"}})
+    assert "Skott BIF   15   9  10  34" in per_period_table(info, stats, 5)
+    assert "Skott på mål     34    18" in stat_table(info, tot.home, tot.away, False)

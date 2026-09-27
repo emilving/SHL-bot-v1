@@ -136,6 +136,7 @@ def compute(
     shootout_period: int = 5,
     game_over: bool = False,
     official_goalies: list[GoalieLine] | None = None,
+    official_periods: dict[str, dict[str, list[int]]] | None = None,
 ) -> GameStats:
     """Räknar fram statistik ur händelserna.
 
@@ -218,7 +219,25 @@ def compute(
         goalies=compute_goalies(events, shootout_period, game_over),
         has_faceoffs=has_faceoffs,
     )
-    if official_goalies:
+    shots_by_period = (official_periods or {}).get("shots") or {}
+    if all(shots_by_period.get(side) for side in SIDES):
+        # Officiella skott och räddningar per period (swehockeys sidhuvud)
+        saves_by_period = (official_periods or {}).get("saves") or {}
+        for side in SIDES:
+            for i, n in enumerate(shots_by_period[side]):
+                if i + 1 >= shootout_period:
+                    break
+                ps(i + 1).side(side).shots = n
+            for i, n in enumerate(saves_by_period.get(side) or []):
+                if i + 1 >= shootout_period:
+                    break
+                ps(i + 1).side(side).saves = n
+        result.periods = periods
+        result.official_shots = {side: sum(st.side(side).shots or 0 for st in periods.values()) for side in SIDES}
+        result.official_saves = {side: sum(st.side(side).saves or 0 for st in periods.values()) for side in SIDES}
+        if official_goalies:
+            result.goalies = official_goalies
+    elif official_goalies:
         # Officiell målvaktsstatistik: lagets skott på mål = motståndarmålvakternas
         # skott mot + mål i tom kasse
         result.goalies = official_goalies

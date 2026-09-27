@@ -208,7 +208,13 @@ class Monitor:
                 else "",
             )
         t = self.tracker(game)
-        notes = t.update(events, status, team_stats, official_goalies=self.official_goalies(game, t, swe))
+        notes = t.update(
+            events,
+            status,
+            team_stats,
+            official_goalies=self.official_goalies(game, t, swe),
+            official_periods={"shots": swe.shots, "saves": swe.saves} if swe and swe.shots else None,
+        )
         for n in notes:
             # Ett misslyckat meddelande får inte stoppa resten
             try:

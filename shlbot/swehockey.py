@@ -108,6 +108,9 @@ class SweGame:
     goals: list[SweGoal] = field(default_factory=list)
     penalties: int = 0
     goalies: list[SweGoalie] = field(default_factory=list)
+    # Officiell statistik per period från sidhuvudet, t.ex. "Shots 34 (15:9:10)"
+    shots: dict[str, list[int]] = field(default_factory=dict)
+    saves: dict[str, list[int]] = field(default_factory=dict)
 
     def goal_with_score(self, home: int, away: int) -> SweGoal | None:
         return next((g for g in self.goals if (g.home, g.away) == (home, away)), None)
@@ -235,9 +238,31 @@ def parse_game_page(html: str) -> SweGame:
                 game.penalties += 1
         break
 
+    _parse_header_stats(soup, game)
     if game.home_score is None and game.goals:
         game.home_score, game.away_score = game.goals[-1].home, game.goals[-1].away
     return game
+
+
+_PERIODS_RE = re.compile(r"^\((\d+(?:\s*:\s*\d+)*)\)$")
+
+
+def _parse_header_stats(soup, game: SweGame) -> None:
+    """Sidhuvudet: "Shots 34 (15:9:10)" för hemmalaget till vänster och bortalaget till höger."""
+    strings = [" ".join(x.split()) for x in soup.stripped_strings]
+    found: dict[str, list[list[int]]] = {"shots": [], "saves": []}
+    for i, text in enumerate(strings):
+        key = text.strip().rstrip(":").lower()
+        if key not in found:
+            continue
+        for nxt in strings[i + 1 : i + 4]:
+            m = _PERIODS_RE.match(nxt.strip())
+            if m:
+                found[key].append([int(x) for x in re.split(r"\s*:\s*", m.group(1))])
+                break
+    for key in found:
+        if len(found[key]) >= 2:
+            setattr(game, key, {"home": found[key][0], "away": found[key][1]})
 
 
 class SweHockeyClient:
@@ -293,7 +318,9 @@ class SweHockeyClient:
 
 _LINEUP_PLAYER_RE = re.compile(r"^(\d{1,2})\.?\s+([^\d].*)$")
 _NUMBER_ONLY_RE = re.compile(r"^(\d{1,2})\.?$")
-_NOT_PLAYERS_RE = re.compile(r"referee|linesm|domare|linjedomare|coach|tränare|staff|ledare", re.I)
+# Domare står före lagen; ledare står under lagnamnet och ska bara hoppas över
+_OFFICIALS_RE = re.compile(r"referee|linesm|domare|linjedomare", re.I)
+_STAFF_RE = re.compile(r"coach|tränare|staff|ledare|manager", re.I)
 
 
 def _lineup_name(raw: str) -> str | None:
@@ -339,8 +366,10 @@ def parse_lineup(html: str, home_names: list[str], away_names: list[str]) -> dic
         side = team_of(text)
         if side:
             current = side
-        elif _NOT_PLAYERS_RE.search(text) and not _LINEUP_PLAYER_RE.match(text):
+        elif _OFFICIALS_RE.search(text) and not _LINEUP_PLAYER_RE.match(text):
             current = None
+        elif _STAFF_RE.search(text) and not _LINEUP_PLAYER_RE.match(text):
+            pass
         elif current:
             number = name = None
             pm = _LINEUP_PLAYER_RE.match(text)

@@ -26,7 +26,7 @@ from .formatting import render
 from .models import STOCKHOLM, GameInfo, GameStatus, extract_event_list, parse_events, parse_status
 from .monitor import ConsoleSink, Monitor
 from .stats import parse_team_stats
-from .swehockey import SweHockeyClient, describe_structure
+from .swehockey import SweHockeyClient
 from .tracker import GameTracker
 
 
@@ -157,11 +157,7 @@ async def cmd_lineups(cfg: Config, day: str | None) -> None:
                 print(f"  {team.code}: {len(players)} spelare: {', '.join(players[:6])}{' …' if len(players) > 6 else ''}")
             await mon.check_lineups(g)
             print()
-        # Felsökning: visa sidans upplägg för första matchen
-        if games and (gid := await mon.swe_id(games[0])):
-            print(f"== Sidans upplägg (https://stats.swehockey.se/Game/LineUps/{gid}):")
-            for line in describe_structure(await swe.lineup_html(gid)):
-                print("  " + line)
+
 
 
 def cmd_replay(directory: Path) -> None:
