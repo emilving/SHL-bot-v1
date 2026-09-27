@@ -14,7 +14,10 @@ if not defined PY (
 
 %PY% -m pip install --quiet --disable-pip-version-check -r requirements.txt
 echo.
-%PY% -m shlbot lineups
+echo Skriv ett datum, t.ex. 2026-09-26, eller tryck bara Enter for idag.
+set "DATUM="
+set /p DATUM=Datum: 
+%PY% -m shlbot lineups %DATUM%
 echo.
 echo ==========================================================
 echo  Ta en skarmbild av fonstret och skicka den.
