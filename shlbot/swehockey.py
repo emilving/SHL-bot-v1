@@ -277,6 +277,9 @@ class SweHockeyClient:
             game_id = find_game(await self.games_on(day, refresh=True), home, away)
         return game_id
 
+    async def lineup_html(self, game_id: int) -> str:
+        return await self._html(f"/Game/LineUps/{game_id}")
+
     async def lineup(self, game_id: int, home_names: list[str], away_names: list[str]) -> dict[str, dict[str, str]]:
         return parse_lineup(await self._html(f"/Game/LineUps/{game_id}"), home_names, away_names)
 
@@ -354,3 +357,29 @@ def parse_lineup(html: str, home_names: list[str], away_names: list[str]) -> dic
                 out[current].setdefault(name.lower(), f"#{number} {name}")
         i += 1
     return out
+
+
+def describe_structure(html: str, limit: int = 60) -> list[str]:
+    """Felsökning: var på sidan varje text står (tabell, rad, cell), för att förstå upplägget."""
+    soup = BeautifulSoup(html, "html.parser")
+    tables = soup.find_all("table")
+    index = {id(t): i for i, t in enumerate(tables)}
+    lines = []
+    for node in soup.body.find_all(string=True) if soup.body else []:
+        text = " ".join(node.split())
+        if not text:
+            continue
+        cell = node.find_parent(["td", "th"])
+        row = node.find_parent("tr")
+        table = node.find_parent("table")
+        where = "-"
+        if table is not None and row is not None:
+            rows = table.find_all("tr", recursive=False) or table.find_all("tr")
+            cells = row.find_all(["td", "th"], recursive=False)
+            r = next((i for i, x in enumerate(rows) if x is row), "?")
+            c = next((i for i, x in enumerate(cells) if x is cell), "?")
+            where = f"T{index.get(id(table), '?')} R{r} C{c}"
+        lines.append(f"{where:<12} {text[:45]}")
+        if len(lines) >= limit:
+            break
+    return lines
