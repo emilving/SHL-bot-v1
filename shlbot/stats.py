@@ -86,6 +86,8 @@ class GoalieLine:
     shots_against: int = 0
     goals_against: int = 0
     seconds: int = 0
+    # Tider i kassen (sekunder från matchstart), för att fördela officiella räddningar
+    intervals: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def saves(self) -> int:
@@ -237,6 +239,9 @@ def compute(
         result.official_saves = {side: sum(st.side(side).saves or 0 for st in periods.values()) for side in SIDES}
         if official_goalies:
             result.goalies = official_goalies
+        else:
+            last = max((e.game_seconds for e in events if e.period < shootout_period), default=0)
+            result.goalies = apply_official_saves(result.goalies, saves_by_period, last)
     elif official_goalies:
         # Officiell målvaktsstatistik: lagets skott på mål = motståndarmålvakternas
         # skott mot + mål i tom kasse
@@ -271,7 +276,10 @@ def compute_goalies(events: list[Event], shootout_period: int = 5, game_over: bo
     def leave(side: str, at: int) -> None:
         name = in_net.get(side)
         if name:
-            line(side, name).seconds += max(0, at - entered_at.get(side, at))
+            start = entered_at.get(side, at)
+            line(side, name).seconds += max(0, at - start)
+            if at > start:
+                line(side, name).intervals.append((start, at))
         in_net[side] = None
 
     for e in events:
@@ -303,6 +311,53 @@ def compute_goalies(events: list[Event], shootout_period: int = 5, game_over: bo
         if in_net.get(side):
             leave(side, end)
     return sorted(lines.values(), key=lambda g: (g.side != HOME, -g.seconds))
+
+
+def apply_official_saves(
+    goalies: list[GoalieLine], saves_by_period: dict[str, list[int]], last_second: int
+) -> list[GoalieLine]:
+    """Ersätter målvakternas räddningar med de officiella per period.
+
+    SHL:s händelselista räknar alla skottförsök, så skott mot målvakten blir för
+    många. Räddningarna per period är officiella; har laget bytt målvakt under
+    en period fördelas periodens räddningar efter tid i kassen. Insläppta mål
+    kommer från målhändelserna. Skott mot = räddningar + insläppta mål.
+    """
+    out = []
+    for side in SIDES:
+        team = [g for g in goalies if g.side == side]
+        per_period = saves_by_period.get(side) or []
+        if not team or not per_period:
+            out.extend(team)
+            continue
+        saves = {g.name: 0.0 for g in team}
+        for i, n in enumerate(per_period):
+            start, end = i * 1200, (i + 1) * 1200
+            if last_second < end:
+                end = max(last_second, start + 1)
+            overlap = {
+                g.name: sum(max(0, min(b, end) - max(a, start)) for a, b in g.intervals) for g in team
+            }
+            total = sum(overlap.values())
+            if total == 0:
+                main = max(team, key=lambda g: g.seconds)
+                saves[main.name] += n
+                continue
+            for name, sec in overlap.items():
+                saves[name] += n * sec / total
+        for g in team:
+            sv = round(saves[g.name])
+            out.append(
+                GoalieLine(
+                    name=g.name,
+                    side=side,
+                    shots_against=sv + g.goals_against,
+                    goals_against=g.goals_against,
+                    seconds=g.seconds,
+                    intervals=g.intervals,
+                )
+            )
+    return [g for g in out if g.shots_against or g.seconds]
 
 
 # ---------------------------------------------------------------------------

@@ -218,15 +218,14 @@ def short_name(label: str) -> str:
 def goalie_table(game: GameInfo, stats: GameStats) -> str:
     if not stats.goalies:
         return ""
-    # Smal tabell så att den inte radbryts i mobilen
-    lines = [f"{'':<14}{'Rd':>6}{'IM':>3}{'Rd%':>6}"]
+    # Smal tabell (max 25 tecken) så att den inte radbryts i mobilen
+    lines = [f"{'':<13}{'Rd':>6}{'Rd%':>6}"]
     for g in stats.goalies:
         pct = f"{100 * g.save_pct:.1f}" if g.save_pct is not None else "–"
         last = short_name(g.name).split(". ", 1)[-1]
-        name = f"{code(game, g.side)} {last}"[:14]
-        lines.append(f"{name:<14}{f'{g.saves}/{g.shots_against}':>6}{g.goals_against:>3}{pct:>6}")
-    lines.append("Rd = räddningar/skott mot")
-    lines.append("IM = insläppta mål")
+        name = f"{code(game, g.side)} {last}"[:12]
+        lines.append(f"{name:<13}{f'{g.saves}/{g.shots_against}':>6}{pct:>6}")
+    lines.append("Rd = räddningar/skott")
     return "```\n" + "\n".join(lines) + "\n```"
 
 

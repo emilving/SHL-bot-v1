@@ -291,3 +291,19 @@ def test_reports_only_list_match_penalties(game, events):
     assert not any(f[0].startswith("Matchstraff") for f in period2.fields)
     live = next(n for n in notes if n.kind == "event" and n.event.id == match_pen.id)
     assert render(live).title.startswith("🟥 Matchstraff")
+
+
+def test_goalie_stats_from_official_period_saves(game, events):
+    from shlbot.formatting import goalie_table
+
+    # Officiella siffror: FBK:s målvakt räddade 1+1+1, LHF:s 3+2+0 (P3-skottet var i tom kasse)
+    official = {"shots": {"home": [4, 3, 1], "away": [1, 2, 1]}, "saves": {"home": [1, 1, 1], "away": [3, 2, 0]}}
+    s = compute(events, game_over=True, official_periods=official)
+    g = {x.name: x for x in s.goalies}
+    assert (g["#30 Emil Larsson"].saves, g["#30 Emil Larsson"].shots_against) == (3, 4)
+    # Lassinantti stod 14 av 20 minuter i P2: 3 + round(2 * 14/20) = 4 räddningar, 2 insläppta
+    assert (g["#35 Joel Lassinantti"].saves, g["#35 Joel Lassinantti"].goals_against) == (4, 2)
+    # Gunnarsson: resten av P2 (6 min av 20) + P3 till tom kasse
+    assert g["#1 Filip Gunnarsson"].saves == 1 and g["#1 Filip Gunnarsson"].goals_against == 0
+    table = goalie_table(game, s)
+    assert all(len(line) <= 25 for line in table.splitlines())
