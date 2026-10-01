@@ -171,7 +171,7 @@ class SHLBot(discord.Client):
                 title=f"📊 {scoreline(g, score or (tot.home.goals, tot.away.goals))}",
                 color=0x7289DA,
             )
-            embed.add_field(name="Statistik", value=stat_table(g, tot.home, tot.away, s.has_faceoffs), inline=False)
+            embed.add_field(name="Statistik", value=stat_table(g, tot.home, tot.away, s.has_faceoffs, s.official_shots is not None), inline=False)
             gt = goalie_table(g, s)
             if gt:
                 embed.add_field(name="Målvakter", value=gt[:1024], inline=False)

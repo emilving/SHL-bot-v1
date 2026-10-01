@@ -38,6 +38,8 @@ COLORS = {
 
 FIELD_LIMIT = 1024
 
+NO_OFFICIAL_SHOTS = "Skott och räddningar visas när officiell statistik från stats.swehockey.se finns."
+
 # Spelsituation i swehockeys målrader, t.ex. "2-1 (PP1)"
 SWE_STRENGTH = {"PP": "Powerplay", "SH": "Boxplay", "EN": "Tom kasse", "PS": "Straffslag"}
 
@@ -144,7 +146,9 @@ def _on_goalie(line: TeamLine) -> int | None:
     return None if line.shots is None else line.shots - (line.en_goals or 0)
 
 
-def stat_rows(home: TeamLine, away: TeamLine, has_faceoffs: bool) -> list[tuple[str, str, str]]:
+def stat_rows(
+    home: TeamLine, away: TeamLine, has_faceoffs: bool, shots: bool = True
+) -> list[tuple[str, str, str]]:
     rows = [
         ("Mål", _v(home.goals), _v(away.goals)),
         ("Skott på mål", _v(home.shots), _v(away.shots)),
@@ -176,11 +180,14 @@ def stat_rows(home: TeamLine, away: TeamLine, has_faceoffs: bool) -> list[tuple[
         h, a = getattr(home, attr), getattr(away, attr)
         if h is not None or a is not None:
             rows.append((label, _v(h), _v(a)))
+    if not shots:
+        # Utan officiella siffror är skotten osäkra (SHL räknar alla skottförsök)
+        rows = [r for r in rows if r[0] not in ("Skott på mål", "Räddningar", "Räddning%")]
     return rows
 
 
-def stat_table(game: GameInfo, home: TeamLine, away: TeamLine, has_faceoffs: bool) -> str:
-    rows = stat_rows(home, away, has_faceoffs)
+def stat_table(game: GameInfo, home: TeamLine, away: TeamLine, has_faceoffs: bool, shots: bool = True) -> str:
+    rows = stat_rows(home, away, has_faceoffs, shots)
     hc, ac = game.home.code[:6], game.away.code[:6]
     lines = [f"{'':<13}{hc:>6}{ac:>6}"]
     lines += [f"{label:<13}{h:>6}{a:>6}" for label, h, a in rows]
@@ -195,7 +202,9 @@ def per_period_table(game: GameInfo, stats: GameStats, shootout_period: int) -> 
     head = f"{'':<10}" + "".join(f"{period_short(p):>4}" for p in periods) + f"{'Tot':>4}"
     lines = [head]
     total = stats.total()
-    shots_known = all(stats.periods[p].side(s).shots is not None for p in periods for s in (HOME, AWAY))
+    shots_known = stats.official_shots is not None and all(
+        stats.periods[p].side(s).shots is not None for p in periods for s in (HOME, AWAY)
+    )
     rows = [("Mål", "goals"), ("Skott", "shots"), ("Utv", "pim")] if shots_known else [
         ("Mål", "goals"), ("Utv", "pim")
     ]
@@ -218,6 +227,14 @@ def short_name(label: str) -> str:
 def goalie_table(game: GameInfo, stats: GameStats) -> str:
     if not stats.goalies:
         return ""
+    if stats.official_shots is None:
+        # Bara insläppta mål: skotten från SHL är skottförsök, inte skott på mål
+        lines = [f"{'':<13}{'IM':>4}"]
+        for g in stats.goalies:
+            last = short_name(g.name).split(". ", 1)[-1]
+            lines.append(f"{f'{code(game, g.side)} {last}'[:12]:<13}{g.goals_against:>4}")
+        lines.append("IM = insläppta mål")
+        return "```\n" + "\n".join(lines) + "\n```"
     # Smal tabell (max 25 tecken) så att den inte radbryts i mobilen
     lines = [f"{'':<13}{'Rd':>6}{'Rd%':>6}"]
     for g in stats.goalies:
@@ -471,6 +488,7 @@ def render_event(n: Notification, shootout_period: int) -> EmbedSpec:
 def render_period(n: Notification, shootout_period: int) -> EmbedSpec:
     g, p, stats = n.game, n.period, n.stats
     assert p is not None and stats is not None
+    official = stats.official_shots is not None
     spec = EmbedSpec(
         f"⏸️ Efter {period_name(p, shootout_period).lower()}: {scoreline(g, n.score)}",
         color=COLORS["period"],
@@ -480,11 +498,13 @@ def render_period(n: Notification, shootout_period: int) -> EmbedSpec:
     spec.add(f"Matchstraff i {period_short(p)}", penalty_list(g, in_period))
     st = stats.periods.get(p)
     if st:
-        spec.add(f"Statistik {period_short(p)}", stat_table(g, st.home, st.away, stats.has_faceoffs))
+        spec.add(f"Statistik {period_short(p)}", stat_table(g, st.home, st.away, stats.has_faceoffs, official))
     if p > 1:
         tot = stats.total(upto=p)
-        spec.add("Totalt i matchen", stat_table(g, tot.home, tot.away, stats.has_faceoffs))
+        spec.add("Totalt i matchen", stat_table(g, tot.home, tot.away, stats.has_faceoffs, official))
     spec.add("Målvakter", goalie_table(g, stats))
+    if not official:
+        spec.footer = NO_OFFICIAL_SHOTS
     return spec
 
 
@@ -508,7 +528,10 @@ def render_final(n: Notification, shootout_period: int) -> EmbedSpec:
     spec.add("Mål", goal_list(g, n.events, shootout_period) or "Inga mål")
     spec.add("Matchstraff", penalty_list(g, n.events))
     tot = stats.total()
-    spec.add("Statistik – hela matchen", stat_table(g, tot.home, tot.away, stats.has_faceoffs))
+    official = stats.official_shots is not None
+    spec.add("Statistik – hela matchen", stat_table(g, tot.home, tot.away, stats.has_faceoffs, official))
     spec.add("Per period", per_period_table(g, stats, shootout_period))
     spec.add("Målvakter", goalie_table(g, stats))
+    if not official:
+        spec.footer = NO_OFFICIAL_SHOTS
     return spec

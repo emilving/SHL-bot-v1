@@ -203,7 +203,9 @@ class Monitor:
                 status.phase,
                 len(events),
                 dict(kinds),
-                f" [swehockey: {swe.state_text or ''} {swe.clock or ''}]" if swe else " [swehockey: ingen data]"
+                f" [swehockey: {swe.state_text or ''} {swe.clock or ''}, skott {swe.shots or 'saknas'}]"
+                if swe
+                else " [swehockey: ingen data]"
                 if self.swe
                 else "",
             )
